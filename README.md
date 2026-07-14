@@ -50,3 +50,39 @@ disk/file storage. Override the data location with `WORKLOAD_DATA_ROOT`.
 See `configs/` for reproducible defaults. GPU measurements must record the
 hardware topology, model revision, project commit, engine version, and full
 server arguments.
+
+## Local Preparation
+
+```bash
+./scripts/install_system_dependencies.sh
+python -m pip install -r requirements.txt
+python -m benchmarks.dataset_adapters
+python -m benchmarks.workload_generator --profile small
+python -m benchmarks.validate_workload \
+  /root/workload-aware-kv-cache-data/processed/small/combined.jsonl \
+  --tokenizer /root/autodl-tmp/models/Qwen3-30B-A3B-Instruct-2507 \
+  --raw-swebench /root/workload-aware-kv-cache-data/raw/swebench_verified.jsonl
+pytest -q
+```
+
+The public dataset adapter pins official Hugging Face revisions and hashes.
+On AutoDL it uses hash-equivalent ModelScope LFS mirrors for LongBench and
+ShareGPT because those mirrors are directly reachable from the domestic
+network. `git-lfs` and `ffmpeg` are required system packages; FFmpeg is also
+needed for the vLLM CLI to load TorchCodec successfully.
+
+Run `scripts/run_mock_stack.sh` in one terminal and
+`scripts/run_simulated_experiment.sh` in another to reproduce the local router
+experiment. These outputs carry a `SIMULATED` marker. They validate the
+measurement pipeline but are not GPU performance results.
+
+## Multi-GPU Handoff
+
+1. Run `scripts/check_environment.sh` and preserve its log.
+2. Copy and verify the 28 model files with `scripts/copy_model_to_data_disk.sh`.
+3. Start one baseline using `scripts/serve_vllm_baseline.sh`.
+4. Run `scripts/smoke_test_api.sh` before any workload sweep.
+5. Execute the configured closed-loop and Poisson matrices only after the
+   single-request baseline is stable.
+
+Do not install `/root/vllm` in editable mode during baseline collection.

@@ -13,6 +13,8 @@ LOG_FILE="$LOG_DIR/check-$(date -u +%Y%m%dT%H%M%SZ).log"
   nvidia-smi || true
   nvidia-smi topo -m || true
   nvcc --version || true
+  ffmpeg -version | head -n 2 || true
+  git lfs version || true
   python - <<'PY'
 import platform
 import torch
@@ -25,11 +27,16 @@ print("cuda_available", torch.cuda.is_available())
 print("gpu_count", torch.cuda.device_count())
 print("vllm", vllm.__version__)
 PY
+  if vllm serve --help >/dev/null 2>&1; then
+    echo "vllm_cli_ok=true"
+  else
+    echo "vllm_cli_ok=false"
+  fi
   echo "model_dir=$MODEL_DIR"
   if [[ -d "$MODEL_DIR" ]]; then
     find "$MODEL_DIR" -maxdepth 1 -type f -printf '%f %s\n' | sort
     echo "model_file_count=$(find "$MODEL_DIR" -maxdepth 1 -type f | wc -l)"
-    echo "model_total_bytes=$(find "$MODEL_DIR" -maxdepth 1 -type f -printf '%s\n' | awk '{sum += $1} END {print sum + 0}')"
+    echo "model_total_bytes=$(find "$MODEL_DIR" -maxdepth 1 -type f -printf '%s\n' | awk '{sum += $1} END {printf "%.0f\n", sum}')"
   else
     echo "model_missing=true"
   fi
