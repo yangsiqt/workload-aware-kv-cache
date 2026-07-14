@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import math
 import random
 import time
@@ -17,6 +16,7 @@ import aiohttp
 from benchmarks.analyze_results import summarize
 from benchmarks.io_utils import load_yaml, project_commit, read_jsonl, sha256_file, write_json, write_jsonl
 from benchmarks.schemas import RequestResult, RunManifest, WorkloadItem
+from benchmarks.sse import SSEAccumulator
 from benchmarks.tokenizer_utils import load_tokenizer
 
 
@@ -45,12 +45,11 @@ async def _request(
 ) -> RequestResult:
     started = time.perf_counter()
     wall_started = time.time()
-    chunks: list[str] = []
     chunk_times: list[float] = []
     status: int | None = None
     response_headers: dict[str, str] = {}
     error: str | None = None
-    done = False
+    stream = SSEAccumulator()
     try:
         payload = {
             "model": model,
@@ -70,39 +69,19 @@ async def _request(
         }
         async with session.post(endpoint, json=payload, headers=headers) as response:
             status = response.status
-            response_headers = dict(response.headers)
+            response_headers = {key.lower(): value for key, value in response.headers.items()}
             if status < 200 or status >= 300:
                 error = (await response.text())[:1000]
             else:
-                buffer = ""
                 async for raw in response.content.iter_any():
-                    buffer += raw.decode("utf-8", errors="replace")
-                    while "\n\n" in buffer:
-                        event, buffer = buffer.split("\n\n", 1)
-                        for line in event.splitlines():
-                            if not line.startswith("data:"):
-                                continue
-                            data = line[5:].strip()
-                            if data == "[DONE]":
-                                done = True
-                                continue
-                            try:
-                                parsed = json.loads(data)
-                                content = parsed["choices"][0].get("delta", {}).get("content")
-                            except (json.JSONDecodeError, KeyError, IndexError, TypeError):
-                                continue
-                            if content:
-                                chunks.append(str(content))
-                                chunk_times.append(time.perf_counter())
-                if not done:
-                    error = "stream ended without [DONE]"
-                elif not chunks:
-                    error = "stream contained no non-empty content delta"
+                    emitted = stream.feed(raw)
+                    chunk_times.extend(time.perf_counter() for _ in emitted)
+                error = stream.validation_error()
     except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
         error = f"{type(exc).__name__}: {exc}"
 
     completed = time.perf_counter()
-    output_text = "".join(chunks)
+    output_text = stream.text
     output_tokens = len(tokenizer.encode(output_text, add_special_tokens=False)) if output_text else 0
     ttft = (chunk_times[0] - started) * 1000 if chunk_times else None
     e2e = (completed - started) * 1000
@@ -110,7 +89,7 @@ async def _request(
     if output_tokens > 1 and ttft is not None:
         tpot = max(0.0, (e2e - ttft) / (output_tokens - 1))
     itl = [(right - left) * 1000 for left, right in zip(chunk_times, chunk_times[1:])]
-    hit_header = response_headers.get("X-Mock-Cache-Hit")
+    hit_header = response_headers.get("x-mock-cache-hit")
     return RequestResult(
         run_id=run_id,
         request_id=item.request_id,
@@ -120,9 +99,9 @@ async def _request(
         request_type=item.request_type,
         prefix_hash=item.prefix_hash,
         priority=item.priority,
-        route_policy=response_headers.get("X-Route-Policy", route_policy),
-        backend_id=response_headers.get("X-Backend-ID"),
-        route_reason=response_headers.get("X-Route-Reason"),
+        route_policy=response_headers.get("x-route-policy", route_policy),
+        backend_id=response_headers.get("x-backend-id"),
+        route_reason=response_headers.get("x-route-reason"),
         cache_hit=None if hit_header is None else hit_header.lower() == "true",
         offered_at_s=offered_at,
         started_at_s=wall_started,
@@ -201,7 +180,7 @@ async def run(args: argparse.Namespace) -> Path:
     manifest = RunManifest(
         run_id=run_id,
         created_at=datetime.now(UTC).isoformat(),
-        project_commit=project_commit(),
+        project_commit=project_commit(Path(__file__).resolve().parents[1]),
         mode=args.mode,
         endpoint=config["endpoint"],
         model=config["model"],

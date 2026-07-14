@@ -12,7 +12,4 @@ data/raw/
 data/processed/
 data/workloads/
 data/runs/
-reports/figures/*.png
-reports/*.csv
 reports/*.jsonl
-
