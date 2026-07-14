@@ -1,0 +1,10 @@
+model: "Qwen3-30B-A3B-Instruct-2507"
+endpoint: "http://127.0.0.1:9000/v1/chat/completions"
+tokenizer_path: "/root/autodl-tmp/models/Qwen3-30B-A3B-Instruct-2507"
+timeout_s: 600
+temperature: 0.0
+seed: 42
+closed_loop_concurrency: [1, 4, 8, 16, 32]
+poisson_request_rates: [0.5, 1.0, 2.0, 4.0]
+max_in_flight: 64
+

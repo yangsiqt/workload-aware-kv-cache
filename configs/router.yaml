@@ -1,0 +1,9 @@
+policy: "prefix_affinity"
+registry_ttl_s: 3600
+trace_path: "/root/log/workload-aware-kv-cache/routing/router_trace.jsonl"
+backends:
+  - id: "mock-a"
+    url: "http://127.0.0.1:9101"
+  - id: "mock-b"
+    url: "http://127.0.0.1:9102"
+

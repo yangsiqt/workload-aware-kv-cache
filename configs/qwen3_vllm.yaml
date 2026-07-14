@@ -1,0 +1,10 @@
+model_path: "/root/autodl-tmp/models/Qwen3-30B-A3B-Instruct-2507"
+served_model_name: "Qwen3-30B-A3B-Instruct-2507"
+tensor_parallel_size: 4
+max_model_len: 32768
+max_num_seqs: 16
+gpu_memory_utilization: 0.90
+kv_cache_dtype: "auto"
+enable_prefix_caching: true
+enable_chunked_prefill: true
+

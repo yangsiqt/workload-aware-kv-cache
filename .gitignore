@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.venv/
+build/
+dist/
+*.egg-info/
+
+# Raw datasets, repository caches, generated workloads, and run artifacts.
+data/raw/
+data/processed/
+data/workloads/
+data/runs/
+reports/figures/*.png
+reports/*.csv
+reports/*.jsonl
+

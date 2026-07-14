@@ -1,0 +1,29 @@
+schema_version: "1.0"
+seed: 42
+data_root: "${WORKLOAD_DATA_ROOT:-/root/workload-aware-kv-cache-data}"
+tokenizer_path: "/root/autodl-tmp/models/Qwen3-30B-A3B-Instruct-2507"
+profiles:
+  small:
+    swebench_sessions: 4
+    longbench_samples: 8
+    sharegpt_sessions: 8
+    controlled_sessions: 8
+    turns_per_swebench_session: 4
+    prefix_tiers: [8192]
+  full:
+    swebench_sessions: 100
+    longbench_samples: 100
+    sharegpt_sessions: 100
+    controlled_sessions: 100
+    turns_per_swebench_session: 6
+    prefix_tiers: [8192, 16384, 32768]
+datasets:
+  swebench:
+    repo_id: "SWE-bench/SWE-bench_Verified"
+    split: "test"
+  longbench:
+    repo_id: "THUDM/LongBench"
+    configs: ["repobench-p", "repobench-p_e"]
+    split: "test"
+  sharegpt:
+    url: "https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json"
