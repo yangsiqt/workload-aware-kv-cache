@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from pathlib import Path, PurePosixPath
@@ -13,29 +14,33 @@ class GitRepoCache:
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
+        self.ssh_key = Path(os.getenv("GITHUB_SSH_KEY", "/root/github_ed25519"))
 
     def _git_dir(self, repo: str) -> Path:
         return self.root / (repo.replace("/", "__") + ".git")
 
     def _run(self, args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(args, check=check, capture_output=True, text=True)
+        env = os.environ.copy()
+        if self.ssh_key.exists():
+            env["GIT_SSH_COMMAND"] = (
+                f"ssh -i {self.ssh_key} -o IdentitiesOnly=yes "
+                "-o StrictHostKeyChecking=accept-new"
+            )
+        return subprocess.run(args, check=check, capture_output=True, text=True, env=env)
 
     def ensure_repo(self, repo: str) -> Path:
         git_dir = self._git_dir(repo)
         if not git_dir.exists():
-            self._run(
-                [
-                    "git",
-                    "-c",
-                    "http.version=HTTP/1.1",
-                    "clone",
-                    "--bare",
-                    "--filter=blob:none",
-                    "--no-tags",
-                    f"https://github.com/{repo}.git",
-                    str(git_dir),
-                ]
+            url = (
+                f"git@github.com:{repo}.git"
+                if self.ssh_key.exists()
+                else f"https://github.com/{repo}.git"
             )
+            git_dir.mkdir(parents=True)
+            self._run(
+                ["git", "init", "--bare", str(git_dir)]
+            )
+            self._run(["git", f"--git-dir={git_dir}", "remote", "add", "origin", url])
         return git_dir
 
     def ensure_commit(self, repo: str, commit: str) -> Path:
@@ -53,6 +58,8 @@ class GitRepoCache:
                     f"--git-dir={git_dir}",
                     "fetch",
                     "--depth=1",
+                    "--filter=blob:none",
+                    "--no-tags",
                     "origin",
                     commit,
                 ]
@@ -114,4 +121,3 @@ class GitRepoCache:
             if size >= target_chars:
                 break
         return "".join(chunks)
-

@@ -1,0 +1,30 @@
+{
+  "valid": true,
+  "path": "/root/workload-aware-kv-cache-data/processed/small/combined.jsonl",
+  "sha256": "e5024327f27fd7507dcd9058b1ef6a65cc3dfeefcea118af23dd25d56b7b1930",
+  "requests": 64,
+  "sessions": 28,
+  "datasets": [
+    "Controlled Prefix",
+    "LongBench RepoBench-P",
+    "SWE-bench Verified",
+    "ShareGPT"
+  ],
+  "prefix_token_lengths": [
+    0,
+    207,
+    230,
+    288,
+    983,
+    1559,
+    2794,
+    8192,
+    12310,
+    13568,
+    14421,
+    14495,
+    14513,
+    18039
+  ],
+  "errors": []
+}

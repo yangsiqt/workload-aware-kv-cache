@@ -20,10 +20,22 @@ profiles:
 datasets:
   swebench:
     repo_id: "SWE-bench/SWE-bench_Verified"
+    revision: "91aa3ed51b709be6457e12d00300a6a596d4c6a3"
     split: "test"
   longbench:
     repo_id: "THUDM/LongBench"
+    revision: "5e628be450b7e67fb7ae6e201bd6d8f7056f7672"
+    archive_sha256: "cb45b11a4133c6bc1d6a44b0f8e701335ff1e543195db1103472e575857f7f64"
+    mirror:
+      repo: "ZhipuAI/LongBench"
+      revision: "5afff9c4ce0cc52104d7eb8c5ea4888846931041"
+      path: "data.zip"
     configs: ["repobench-p", "repobench-p_e"]
     split: "test"
   sharegpt:
     url: "https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json"
+    sha256: "35f0e213ce091ed9b9af2a1f0755e9d39f9ccec34ab281cd4ca60d70f6479ba4"
+    mirror:
+      repo: "otavia/ShareGPT_Vicuna_unfiltered"
+      revision: "15b857fc717f6d517798b799656e1c1c35f95703"
+      path: "ShareGPT_V3_unfiltered_cleaned_split.json"

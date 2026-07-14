@@ -1,0 +1,35 @@
+{
+  "artifacts": {
+    "controlled": {
+      "path": "/root/workload-aware-kv-cache-data/processed/small/controlled.jsonl",
+      "rows": 32,
+      "sha256": "b18cea9066c28f215861d87c1af64262eb20c96e93ec9b1d000cb017bbd488d3"
+    },
+    "longbench": {
+      "path": "/root/workload-aware-kv-cache-data/processed/small/longbench.jsonl",
+      "rows": 8,
+      "sha256": "9309f639ad382a5c544af88fd7d05d6350a6e3e4f8595df0c5d7749fd49d0122"
+    },
+    "sharegpt": {
+      "path": "/root/workload-aware-kv-cache-data/processed/small/sharegpt.jsonl",
+      "rows": 8,
+      "sha256": "5c95fde081f88051a31aa8f26eed2eb5239e97fceef31079c56d7a682ff9e1d9"
+    },
+    "swebench": {
+      "path": "/root/workload-aware-kv-cache-data/processed/small/swebench.jsonl",
+      "rows": 16,
+      "sha256": "29e22007639ece071b04015c636c9ce8c362aa23cdbeb446d474bce4585de412"
+    }
+  },
+  "combined": {
+    "path": "/root/workload-aware-kv-cache-data/processed/small/combined.jsonl",
+    "rows": 64,
+    "sha256": "e5024327f27fd7507dcd9058b1ef6a65cc3dfeefcea118af23dd25d56b7b1930"
+  },
+  "created_at": "2026-07-14T16:43:32.029510+00:00",
+  "profile": "small",
+  "schema_version": "1.0",
+  "seed": 42,
+  "tokenizer_fingerprint": "sha256:084664fb3e8bec566d64f869961c183cb2cd87520f8e2a551b7ead2123d76002",
+  "tokenizer_path": "/root/autodl-tmp/models/Qwen3-30B-A3B-Instruct-2507"
+}

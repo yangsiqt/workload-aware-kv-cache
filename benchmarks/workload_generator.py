@@ -22,6 +22,7 @@ from benchmarks.tokenizer_utils import (
     fit_system_content,
     load_tokenizer,
     token_ids_sha256,
+    tokenizer_fingerprint,
 )
 
 
@@ -84,6 +85,8 @@ def _source_revision(manifest: dict[str, Any], name: str, fallback: str) -> str:
     artifact = manifest.get("artifacts", {}).get(name)
     if isinstance(artifact, dict):
         return str(artifact.get("revision") or artifact.get("sha256") or fallback)
+    if isinstance(artifact, list) and artifact:
+        return str(artifact[0].get("revision") or artifact[0].get("sha256") or fallback)
     return fallback
 
 
@@ -361,7 +364,7 @@ def generate(config_path: Path, profile_name: str, selected: set[str]) -> dict[s
         items = _build_longbench(
             read_jsonl(path),
             count=int(profile["longbench_samples"]),
-            revision="pinned-in-dataset-manifest",
+            revision=_source_revision(dataset_manifest, "longbench", "unknown"),
             snapshot_id=snapshot_id,
             tokenizer=tokenizer,
         )
@@ -404,6 +407,7 @@ def generate(config_path: Path, profile_name: str, selected: set[str]) -> dict[s
         "profile": profile_name,
         "seed": config["seed"],
         "tokenizer_path": config["tokenizer_path"],
+        "tokenizer_fingerprint": tokenizer_fingerprint(config["tokenizer_path"]),
         "combined": {
             "path": str(combined_path),
             "rows": len(combined),
@@ -432,4 +436,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
