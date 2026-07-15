@@ -1,0 +1,35 @@
+{
+  "artifacts": {
+    "controlled": {
+      "path": "/root/workload-aware-kv-cache-data/processed/pre_rental/controlled.jsonl",
+      "rows": 180,
+      "sha256": "7ac744eebd7d199efb9cc2ef4973c8837af3d0507954f23c847deb7fa43ae996"
+    },
+    "longbench": {
+      "path": "/root/workload-aware-kv-cache-data/processed/pre_rental/longbench.jsonl",
+      "rows": 30,
+      "sha256": "831be9f0bd55cbf6fcbf70e8cc5e5c78bc4af55cedbbeffd1cb15b7079c75151"
+    },
+    "sharegpt": {
+      "path": "/root/workload-aware-kv-cache-data/processed/pre_rental/sharegpt.jsonl",
+      "rows": 30,
+      "sha256": "c12ce28289137bb104234052edc8842e9fce4db42a6f41b077ae26b1911a717f"
+    },
+    "swebench": {
+      "path": "/root/workload-aware-kv-cache-data/processed/pre_rental/swebench.jsonl",
+      "rows": 90,
+      "sha256": "75a0b49b01f55f3630d5f97e566e29c656d6a2fa30b969c62efa1514d0ee9ad9"
+    }
+  },
+  "combined": {
+    "path": "/root/workload-aware-kv-cache-data/processed/pre_rental/combined.jsonl",
+    "rows": 330,
+    "sha256": "c183f400594cdc521581bb76d258673cdae6013efca336231a35f32e67bb8dc4"
+  },
+  "created_at": "2026-07-15T03:52:25.118275+00:00",
+  "profile": "pre_rental",
+  "schema_version": "1.0",
+  "seed": 42,
+  "tokenizer_fingerprint": "sha256:084664fb3e8bec566d64f869961c183cb2cd87520f8e2a551b7ead2123d76002",
+  "tokenizer_path": "/root/autodl-tmp/models/Qwen3-30B-A3B-Instruct-2507"
+}

@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterable
 
+import ijson
+
 from benchmarks.io_utils import (
     load_yaml,
     read_jsonl,
@@ -101,8 +103,9 @@ def _build_swebench(
     snapshot_id: str,
     tokenizer: Any,
     repo_cache: GitRepoCache,
+    preselected: bool = False,
 ) -> list[WorkloadItem]:
-    selected = _stratified_sample(rows, count, seed)
+    selected = rows if preselected else _stratified_sample(rows, count, seed)
     result: list[WorkloadItem] = []
     for index, row in enumerate(selected):
         instance_id = str(row["instance_id"])
@@ -222,7 +225,7 @@ def _normalize_sharegpt_turn(turn: dict[str, Any]) -> dict[str, str] | None:
 
 
 def _build_sharegpt(
-    conversations: list[dict[str, Any]],
+    conversations: Iterable[dict[str, Any]],
     *,
     count: int,
     revision: str,
@@ -345,8 +348,32 @@ def generate(config_path: Path, profile_name: str, selected: set[str]) -> dict[s
 
     if "swebench" in selected:
         path = raw_dir / "swebench_verified.jsonl"
+        swebench_rows = list(read_jsonl(path))
+        instance_ids = [str(value) for value in profile.get("swebench_instance_ids", [])]
+        if instance_ids:
+            if len(instance_ids) != int(profile["swebench_sessions"]):
+                raise ValueError("swebench_instance_ids must match swebench_sessions")
+            by_id = {str(row["instance_id"]): row for row in swebench_rows}
+            missing = [instance_id for instance_id in instance_ids if instance_id not in by_id]
+            if missing:
+                raise ValueError(f"Unknown SWE-bench instance IDs: {missing}")
+            swebench_rows = [by_id[instance_id] for instance_id in instance_ids]
+        if profile.get("require_prefetched_snapshots", False):
+            snapshot_root = data_root / "repo-cache" / "snapshots"
+            swebench_rows = [
+                row for row in swebench_rows
+                if (
+                    snapshot_root
+                    / str(row["repo"]).replace("/", "__")
+                    / f"{row['base_commit']}.tar.gz"
+                ).exists()
+            ]
+            if len(swebench_rows) < int(profile["swebench_sessions"]):
+                raise ValueError(
+                    f"Only {len(swebench_rows)} prefetched SWE-bench snapshots are available"
+                )
         items = _build_swebench(
-            list(read_jsonl(path)),
+            swebench_rows,
             count=int(profile["swebench_sessions"]),
             turns=int(profile["turns_per_swebench_session"]),
             prefix_tiers=[int(value) for value in profile["prefix_tiers"]],
@@ -355,6 +382,7 @@ def generate(config_path: Path, profile_name: str, selected: set[str]) -> dict[s
             snapshot_id=snapshot_id,
             tokenizer=tokenizer,
             repo_cache=repo_cache,
+            preselected=bool(instance_ids),
         )
         outputs["swebench"] = items
         combined.extend(items)
@@ -373,14 +401,14 @@ def generate(config_path: Path, profile_name: str, selected: set[str]) -> dict[s
 
     if "sharegpt" in selected:
         path = raw_dir / "sharegpt.json"
-        conversations = json.loads(path.read_text(encoding="utf-8"))
-        items = _build_sharegpt(
-            conversations,
-            count=int(profile["sharegpt_sessions"]),
-            revision=_source_revision(dataset_manifest, "sharegpt", sha256_file(path)),
-            snapshot_id=snapshot_id,
-            tokenizer=tokenizer,
-        )
+        with path.open("rb") as handle:
+            items = _build_sharegpt(
+                ijson.items(handle, "item"),
+                count=int(profile["sharegpt_sessions"]),
+                revision=_source_revision(dataset_manifest, "sharegpt", sha256_file(path)),
+                snapshot_id=snapshot_id,
+                tokenizer=tokenizer,
+            )
         outputs["sharegpt"] = items
         combined.extend(items)
 
@@ -422,13 +450,16 @@ def generate(config_path: Path, profile_name: str, selected: set[str]) -> dict[s
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate reproducible serving workloads")
     parser.add_argument("--config", default="configs/workloads.yaml")
-    parser.add_argument("--profile", choices=["small", "full"], default="small")
+    parser.add_argument("--profile", default="small", help="Profile name from configs/workloads.yaml")
     parser.add_argument(
         "--datasets",
         default="swebench,longbench,sharegpt,controlled",
         help="Comma-separated: swebench,longbench,sharegpt,controlled",
     )
     args = parser.parse_args()
+    available = load_yaml(Path(args.config))["profiles"]
+    if args.profile not in available:
+        parser.error(f"unknown profile {args.profile!r}; choose from {', '.join(available)}")
     selected = {name.strip() for name in args.datasets.split(",") if name.strip()}
     manifest = generate(Path(args.config), args.profile, selected)
     print(json.dumps(manifest, ensure_ascii=False, indent=2))

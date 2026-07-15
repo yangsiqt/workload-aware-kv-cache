@@ -10,6 +10,30 @@ profiles:
     controlled_sessions: 8
     turns_per_swebench_session: 4
     prefix_tiers: [8192]
+  pre_rental:
+    swebench_sessions: 15
+    require_prefetched_snapshots: true
+    swebench_instance_ids:
+      - "astropy__astropy-13033"
+      - "django__django-15629"
+      - "mwaskom__seaborn-3069"
+      - "pallets__flask-5014"
+      - "psf__requests-2317"
+      - "pydata__xarray-3095"
+      - "pylint-dev__pylint-4551"
+      - "pytest-dev__pytest-5787"
+      - "scikit-learn__scikit-learn-14710"
+      - "sphinx-doc__sphinx-9698"
+      - "sympy__sympy-24066"
+      - "astropy__astropy-12907"
+      - "django__django-12143"
+      - "mwaskom__seaborn-3187"
+      - "psf__requests-1921"
+    longbench_samples: 30
+    sharegpt_sessions: 30
+    controlled_sessions: 30
+    turns_per_swebench_session: 6
+    prefix_tiers: [8192, 16384, 32768]
   full:
     swebench_sessions: 100
     longbench_samples: 100

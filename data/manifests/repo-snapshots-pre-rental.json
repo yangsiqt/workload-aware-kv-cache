@@ -1,0 +1,113 @@
+{
+  "created_at": "2026-07-15T03:53:31.297033+00:00",
+  "profile": "pre_rental",
+  "schema_version": "1.0",
+  "seed": 42,
+  "snapshots": [
+    {
+      "bytes": 7781192,
+      "commit": "298ccb478e6bf092953bca67a3d29dc6c35f6752",
+      "path": "/root/workload-aware-kv-cache-data/repo-cache/snapshots/astropy__astropy/298ccb478e6bf092953bca67a3d29dc6c35f6752.tar.gz",
+      "repo": "astropy/astropy",
+      "sha256": "a5bab553799dade3acf5ad4797ca8a42327fc155dbd6052139fae6f07d4f3c82"
+    },
+    {
+      "bytes": 7774271,
+      "commit": "d16bfe05a744909de4b27f5875fe0d4ed41ce607",
+      "path": "/root/workload-aware-kv-cache-data/repo-cache/snapshots/astropy__astropy/d16bfe05a744909de4b27f5875fe0d4ed41ce607.tar.gz",
+      "repo": "astropy/astropy",
+      "sha256": "4ffc67512585ebd76f93abe9544e3563f826ccf70e1576492d3f21eb8d3d4979"
+    },
+    {
+      "bytes": 9015987,
+      "commit": "5573a54d409bb98b5c5acdb308310bed02d392c2",
+      "path": "/root/workload-aware-kv-cache-data/repo-cache/snapshots/django__django/5573a54d409bb98b5c5acdb308310bed02d392c2.tar.gz",
+      "repo": "django/django",
+      "sha256": "24a676f6883a59aa0dda244459c739bcdb5f86edee5910313c36026e41ff8cc6"
+    },
+    {
+      "bytes": 10164373,
+      "commit": "694cf458f16b8d340a3195244196980b2dec34fd",
+      "path": "/root/workload-aware-kv-cache-data/repo-cache/snapshots/django__django/694cf458f16b8d340a3195244196980b2dec34fd.tar.gz",
+      "repo": "django/django",
+      "sha256": "aa7d56b65837c1fb1ca0e733241cb611d1c2c28baf508d1a5f3d135d0e6faac6"
+    },
+    {
+      "bytes": 1889237,
+      "commit": "22cdfb0c93f8ec78492d87edb810f10cb7f57a31",
+      "path": "/root/workload-aware-kv-cache-data/repo-cache/snapshots/mwaskom__seaborn/22cdfb0c93f8ec78492d87edb810f10cb7f57a31.tar.gz",
+      "repo": "mwaskom/seaborn",
+      "sha256": "1f50c370c40507425018a560e945be9b76552734a893dd3bd4eeefa7afe902dc"
+    },
+    {
+      "bytes": 1877680,
+      "commit": "54cab15bdacfaa05a88fbc5502a5b322d99f148e",
+      "path": "/root/workload-aware-kv-cache-data/repo-cache/snapshots/mwaskom__seaborn/54cab15bdacfaa05a88fbc5502a5b322d99f148e.tar.gz",
+      "repo": "mwaskom/seaborn",
+      "sha256": "adadbbd7da2037e73a8efda4efebd62ddc0247dbe90ede72284b791f735554ab"
+    },
+    {
+      "bytes": 692792,
+      "commit": "7ee9ceb71e868944a46e1ff00b506772a53a4f1d",
+      "path": "/root/workload-aware-kv-cache-data/repo-cache/snapshots/pallets__flask/7ee9ceb71e868944a46e1ff00b506772a53a4f1d.tar.gz",
+      "repo": "pallets/flask",
+      "sha256": "b1a4c83b7d12981b81e5f8d2028a73eacfbd153f4e425504c254a6f177b99997"
+    },
+    {
+      "bytes": 646953,
+      "commit": "091991be0da19de9108dbe5e3752917fea3d7fdc",
+      "path": "/root/workload-aware-kv-cache-data/repo-cache/snapshots/psf__requests/091991be0da19de9108dbe5e3752917fea3d7fdc.tar.gz",
+      "repo": "psf/requests",
+      "sha256": "3163967c6ee3ea0ab1c0d1e780bb7002a68825f5b85ef36e1d3698ca117f4853"
+    },
+    {
+      "bytes": 614047,
+      "commit": "3c88e520da24ae6f736929a750876e7654accc3d",
+      "path": "/root/workload-aware-kv-cache-data/repo-cache/snapshots/psf__requests/3c88e520da24ae6f736929a750876e7654accc3d.tar.gz",
+      "repo": "psf/requests",
+      "sha256": "0f6375a24b3322b74234f1a6c12d7759c304e9c4c4739ad059d30072deda8269"
+    },
+    {
+      "bytes": 2913670,
+      "commit": "1757dffac2fa493d7b9a074b84cf8c830a706688",
+      "path": "/root/workload-aware-kv-cache-data/repo-cache/snapshots/pydata__xarray/1757dffac2fa493d7b9a074b84cf8c830a706688.tar.gz",
+      "repo": "pydata/xarray",
+      "sha256": "6cf6c469444fb89b05ad35de96ff21e4146f7bd9d50073f739f8f209f0a55754"
+    },
+    {
+      "bytes": 764607,
+      "commit": "99589b08de8c5a2c6cc61e13a37420a868c80599",
+      "path": "/root/workload-aware-kv-cache-data/repo-cache/snapshots/pylint-dev__pylint/99589b08de8c5a2c6cc61e13a37420a868c80599.tar.gz",
+      "repo": "pylint-dev/pylint",
+      "sha256": "b5d3b36a01d0ca3b658c93a33ddb5cea19a00d94cc2fbf1dfc771533c19c47b5"
+    },
+    {
+      "bytes": 959863,
+      "commit": "955e54221008aba577ecbaefa15679f6777d3bf8",
+      "path": "/root/workload-aware-kv-cache-data/repo-cache/snapshots/pytest-dev__pytest/955e54221008aba577ecbaefa15679f6777d3bf8.tar.gz",
+      "repo": "pytest-dev/pytest",
+      "sha256": "2e306fe72ffc90d1c4687dcaac3061492cdf8c5c4a4199adf25178eda7aaa10a"
+    },
+    {
+      "bytes": 6547558,
+      "commit": "4b6273b87442a4437d8b3873ea3022ae163f4fdf",
+      "path": "/root/workload-aware-kv-cache-data/repo-cache/snapshots/scikit-learn__scikit-learn/4b6273b87442a4437d8b3873ea3022ae163f4fdf.tar.gz",
+      "repo": "scikit-learn/scikit-learn",
+      "sha256": "039a9e862be3f654374e019980cc19bd2e8d53825d4514170556d28f4906a2b9"
+    },
+    {
+      "bytes": 6631458,
+      "commit": "f050a7775dfc9000f55d023d36d925a8d02ccfa8",
+      "path": "/root/workload-aware-kv-cache-data/repo-cache/snapshots/sphinx-doc__sphinx/f050a7775dfc9000f55d023d36d925a8d02ccfa8.tar.gz",
+      "repo": "sphinx-doc/sphinx",
+      "sha256": "d1b534ac9e98c3933fb1ca0c5b0d43f0ef4ae395806aeeb2a8a04bb53b02b284"
+    },
+    {
+      "bytes": 8052827,
+      "commit": "514579c655bf22e2af14f0743376ae1d7befe345",
+      "path": "/root/workload-aware-kv-cache-data/repo-cache/snapshots/sympy__sympy/514579c655bf22e2af14f0743376ae1d7befe345.tar.gz",
+      "repo": "sympy/sympy",
+      "sha256": "9c8dd0710e41bcb5748c3742b6fa45a23984fac7f509f7720b62a02abd21dbe5"
+    }
+  ]
+}

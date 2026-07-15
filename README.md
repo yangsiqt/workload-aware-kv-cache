@@ -86,3 +86,18 @@ measurement pipeline but are not GPU performance results.
    single-request baseline is stable.
 
 Do not install `/root/vllm` in editable mode during baseline collection.
+
+## Pre-rental Dataset
+
+The pinned `pre_rental` profile is the handoff workload for the first real GPU
+runs. It contains 330 requests across 105 sessions:
+
+- 15 SWE-bench Verified sessions and 90 deterministic agent turns spanning 11 repositories;
+- five SWE sessions at each shared-prefix tier: 8K, 16K, and 32K tokens;
+- 30 LongBench RepoBench-P requests and 30 ShareGPT requests;
+- 30 controlled sessions and 180 requests for routing causality checks.
+
+The exact SWE-bench instance IDs are pinned in `configs/workloads.yaml`.
+Generated data is stored under
+`/root/workload-aware-kv-cache-data/processed/pre_rental`; the tracked manifest
+and validation summary are under `data/manifests/`.

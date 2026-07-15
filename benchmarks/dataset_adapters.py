@@ -13,6 +13,7 @@ from typing import Any
 
 from datasets import load_dataset
 from huggingface_hub import HfApi
+import ijson
 
 from benchmarks.io_utils import load_yaml, sha256_file, write_json, write_jsonl
 
@@ -59,8 +60,7 @@ def _download_file(url: str, output_path: Path) -> dict[str, Any]:
         shutil.copyfileobj(response, handle, length=1024 * 1024)
         etag = response.headers.get("ETag")
     temporary.replace(output_path)
-    with output_path.open(encoding="utf-8") as handle:
-        rows = len(json.load(handle))
+    rows = _count_json_array(output_path)
     return {
         "url": url,
         "etag": etag,
@@ -69,6 +69,11 @@ def _download_file(url: str, output_path: Path) -> dict[str, Any]:
         "bytes": output_path.stat().st_size,
         "sha256": sha256_file(output_path),
     }
+
+
+def _count_json_array(path: Path) -> int:
+    with path.open("rb") as handle:
+        return sum(1 for _ in ijson.items(handle, "item"))
 
 
 def _modelscope_lfs_file(
@@ -223,8 +228,7 @@ def download_datasets(config_path: Path, selected: set[str]) -> dict[str, Any]:
             source = _modelscope_lfs_file(spec["mirror"], cache_dir, spec["sha256"])
             output = raw_dir / "sharegpt.json"
             _materialize(source, output)
-            with output.open(encoding="utf-8") as handle:
-                rows = len(json.load(handle))
+            rows = _count_json_array(output)
             artifacts["sharegpt"] = {
                 "url": spec["url"], "mirror": spec["mirror"], "rows": rows,
                 "path": str(output), "bytes": output.stat().st_size,
