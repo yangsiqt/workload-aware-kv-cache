@@ -19,7 +19,8 @@ class GitRepoCache:
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
-        self.ssh_key = Path(os.getenv("GITHUB_SSH_KEY", "/root/github_ed25519"))
+        ssh_key = os.getenv("GITHUB_SSH_KEY")
+        self.ssh_key = Path(ssh_key).expanduser() if ssh_key else None
 
     def _git_dir(self, repo: str) -> Path:
         return self.root / (repo.replace("/", "__") + ".git")
@@ -30,7 +31,7 @@ class GitRepoCache:
     def _run(self, args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         env["GIT_NO_LAZY_FETCH"] = "1"
-        if self.ssh_key.exists():
+        if self.ssh_key is not None and self.ssh_key.exists():
             env["GIT_SSH_COMMAND"] = (
                 f"ssh -i {self.ssh_key} -o IdentitiesOnly=yes "
                 "-o StrictHostKeyChecking=accept-new"
@@ -42,7 +43,7 @@ class GitRepoCache:
         if not git_dir.exists():
             url = (
                 f"git@github.com:{repo}.git"
-                if self.ssh_key.exists()
+                if self.ssh_key is not None and self.ssh_key.exists()
                 else f"https://github.com/{repo}.git"
             )
             git_dir.mkdir(parents=True)

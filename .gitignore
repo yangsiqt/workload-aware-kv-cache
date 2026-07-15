@@ -6,6 +6,13 @@ __pycache__/
 build/
 dist/
 *.egg-info/
+.env
+.env.*
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+*.log
 
 # Raw datasets, repository caches, generated workloads, and run artifacts.
 data/raw/
@@ -13,3 +20,4 @@ data/processed/
 data/workloads/
 data/runs/
 reports/*.jsonl
+environment.lock.txt

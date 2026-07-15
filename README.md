@@ -1,5 +1,8 @@
 # Workload-aware KV Cache for Long-context Code Agents
 
+[![Tests](https://github.com/yangsiqt/workload-aware-kv-cache/actions/workflows/tests.yml/badge.svg)](https://github.com/yangsiqt/workload-aware-kv-cache/actions/workflows/tests.yml)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 This project studies repeated prefill and cross-instance KV cache misses in
 long-context code-agent serving. It uses Qwen3-30B-A3B-Instruct-2507 with
 vLLM as the primary engine and SGLang as a later comparison baseline.
@@ -16,6 +19,13 @@ vLLM as the primary engine and SGLang as a later comparison baseline.
 
 This is a serving-systems benchmark. It does not report SWE-bench solve rates
 or use gold patches in model prompts.
+
+## Project Status
+
+The data pipeline, asynchronous benchmark client, workload-aware router, mock
+backends, tests, and multi-GPU handoff scripts are complete. Results currently
+tracked in this repository are explicitly marked `SIMULATED`. Real Qwen3/vLLM
+measurements on H20 GPUs are the next milestone and will be reported separately.
 
 ## Current Boundary
 
@@ -101,3 +111,20 @@ The exact SWE-bench instance IDs are pinned in `configs/workloads.yaml`.
 Generated data is stored under
 `/root/workload-aware-kv-cache-data/processed/pre_rental`; the tracked manifest
 and validation summary are under `data/manifests/`.
+
+## Repository and Artifact Policy
+
+The repository tracks source code, configs, tests, dataset revisions and hashes,
+small result summaries, and reproducible figures. Model weights, raw public
+datasets, repository snapshots, per-request traces, logs, credentials, and local
+caches stay outside Git. Set `WORKLOAD_DATA_ROOT`, `MODEL_PATH`, and
+`GITHUB_SSH_KEY` to adapt the examples to another machine.
+
+SWE-bench Verified, LongBench, ShareGPT, Qwen, vLLM, and SGLang remain subject
+to their respective upstream licenses and terms. This repository does not
+redistribute their raw data, source snapshots, or model weights.
+
+## License
+
+Project-authored source code is available under the Apache License 2.0. See
+`LICENSE` for details.
