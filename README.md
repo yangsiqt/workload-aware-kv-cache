@@ -5,7 +5,7 @@
 
 This project studies repeated prefill and cross-instance KV cache misses in
 long-context code-agent serving. It uses Qwen3-30B-A3B-Instruct-2507 with
-vLLM as the primary engine and SGLang as a later comparison baseline.
+vLLM as the primary engine and Production Stack as the routing framework.
 
 ## Workloads
 
@@ -22,10 +22,11 @@ or use gold patches in model prompts.
 
 ## Project Status
 
-The data pipeline, asynchronous benchmark client, workload-aware router, mock
-backends, tests, and multi-GPU handoff scripts are complete. Results currently
-tracked in this repository are explicitly marked `SIMULATED`. Real Qwen3/vLLM
-measurements on H20 GPUs are the next milestone and will be reported separately.
+The data pipeline, asynchronous benchmark client, mock backends, and pre-GPU
+Router implementation are complete. The project extends the Production Stack
+Python Router with an `agent_slo_aware` policy. Results currently tracked in
+this repository are explicitly marked `SIMULATED`; real multi-H20 Before/After
+measurements remain a separate milestone.
 
 ## Current Boundary
 
@@ -86,6 +87,19 @@ Run `scripts/run_mock_stack.sh` in one terminal and
 experiment. These outputs carry a `SIMULATED` marker. They validate the
 measurement pipeline but are not GPU performance results.
 
+The Production Stack integration is maintained in the companion fork on the
+`feature/agent-slo-aware-router` branch. With that branch installed in
+`/root/.venvs/vllm-router`, run the official-policy and project-policy matrix:
+
+```bash
+./scripts/run_guarded.sh /root/log/workload-aware-kv-cache/router-matrix.log \
+  -- ./scripts/run_production_policy_matrix.sh
+```
+
+The script starts two cold Mock backends for each policy, exercises
+`roundrobin`, `session`, `prefixaware`, and `agent_slo_aware`, writes a
+watermarked comparison, and verifies that no Router or Mock process remains.
+
 ## Multi-GPU Handoff
 
 1. Run `scripts/check_environment.sh` and preserve its log.
@@ -97,10 +111,10 @@ measurement pipeline but are not GPU performance results.
 
 Do not install `/root/vllm` in editable mode during baseline collection.
 
-## Pre-rental Dataset
+## Workload Profiles
 
-The pinned `pre_rental` profile is the handoff workload for the first real GPU
-runs. It contains 330 requests across 105 sessions:
+The pinned `pre_rental` screening profile contains 330 requests across 105
+sessions:
 
 - 15 SWE-bench Verified sessions and 90 deterministic agent turns spanning 11 repositories;
 - five SWE sessions at each shared-prefix tier: 8K, 16K, and 32K tokens;
@@ -112,6 +126,26 @@ Generated data is stored under
 `/root/workload-aware-kv-cache-data/processed/pre_rental`; the tracked manifest
 and validation summary are under `data/manifests/`.
 
+The `final` profile pins 50 SWE-bench sessions and 300 deterministic Agent
+turns. Three fixed Poisson arrival traces provide at least 900 business
+requests for final repeated experiments. The earlier screening profile is not
+used alone for a p99 headline.
+
+```bash
+GITHUB_ARCHIVE_MIRROR=https://ghfast.top/https://github.com \
+  GITHUB_DOWNLOAD_MODE=direct \
+  ./scripts/run_guarded.sh /root/log/workload-aware-kv-cache/prefetch-final.log \
+  -- python -m benchmarks.prefetch_repos --profile final --workers 1
+
+./scripts/run_guarded.sh /root/log/workload-aware-kv-cache/generate-final.log \
+  -- python -m benchmarks.workload_generator --profile final
+
+python -m benchmarks.generate_arrival_traces \
+  /root/workload-aware-kv-cache-data/processed/final/swebench.jsonl \
+  --output-dir /root/workload-aware-kv-cache-data/arrival-traces/final \
+  --request-rate 2 --seeds 42,43,44
+```
+
 ## Repository and Artifact Policy
 
 The repository tracks source code, configs, tests, dataset revisions and hashes,
@@ -120,7 +154,8 @@ datasets, repository snapshots, per-request traces, logs, credentials, and local
 caches stay outside Git. Set `WORKLOAD_DATA_ROOT`, `MODEL_PATH`, and
 `GITHUB_SSH_KEY` to adapt the examples to another machine.
 
-SWE-bench Verified, LongBench, ShareGPT, Qwen, vLLM, and SGLang remain subject
+SWE-bench Verified, LongBench, ShareGPT, Qwen, vLLM, Production Stack, LMCache,
+and Mooncake remain subject
 to their respective upstream licenses and terms. This repository does not
 redistribute their raw data, source snapshots, or model weights.
 

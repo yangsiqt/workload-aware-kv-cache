@@ -1,0 +1,19 @@
+schema_version: "1.0"
+python: "3.12.3"
+torch: "2.11.0+cu130"
+vllm:
+  package: "0.25.0"
+  source_tag: "v0.25.0"
+  commit: "702f4814fe54fabff350d43cb753ae3e47c0c276"
+production_stack:
+  commit: "90ddf82b97ec9b09098de9976dc8dcb75c6be363"
+  environment: "/root/.venvs/vllm-router"
+lmcache:
+  package: "0.5.1"
+  source_commit: "e38ee4157a11703b07845f45fd98e714b25c13cd"
+  environment: "/root/.venvs/kv-worker"
+mooncake:
+  package: "0.3.11.post1"
+  source_commit: "d65bbd9810bb8322cd37aa18e50141760e050949"
+  environment: "/root/.venvs/kv-worker"
+compatibility_status: "no-gpu-import-smoke-passed; GPU connector runtime pending"

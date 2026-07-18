@@ -89,6 +89,13 @@ class RunManifest(BaseModel):
     max_concurrency: int
     request_rate: float | None = None
     seed: int = 42
+    arrival_trace_path: str | None = None
+    arrival_trace_sha256: str | None = None
     simulated: bool = False
     config: dict[str, Any] = Field(default_factory=dict)
 
+
+class ArrivalTraceItem(BaseModel):
+    schema_version: str = "1.0"
+    request_id: str
+    offset_s: float = Field(ge=0)

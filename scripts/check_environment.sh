@@ -4,7 +4,7 @@ set -uo pipefail
 LOG_DIR="${LOG_DIR:-/root/log/workload-aware-kv-cache/environment}"
 MODEL_DIR="${MODEL_DIR:-/root/autodl-tmp/models/Qwen3-30B-A3B-Instruct-2507}"
 mkdir -p "$LOG_DIR"
-LOG_FILE="$LOG_DIR/check-$(date -u +%Y%m%dT%H%M%SZ).log"
+LOG_FILE="${LOG_FILE:-$LOG_DIR/check-$(date -u +%Y%m%dT%H%M%SZ).log}"
 
 {
   date -u --iso-8601=seconds
