@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
-import random
-from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Iterator
 
 import ijson
 
@@ -18,6 +16,7 @@ from benchmarks.io_utils import (
     write_jsonl,
 )
 from benchmarks.repo_context import GitRepoCache
+from benchmarks.sampling import stratified_sample
 from benchmarks.schemas import ChatMessage, SourceInfo, WorkloadItem
 from benchmarks.tokenizer_utils import (
     chat_tokens,
@@ -26,7 +25,6 @@ from benchmarks.tokenizer_utils import (
     token_ids_sha256,
     tokenizer_fingerprint,
 )
-
 
 CODE_AGENT_SYSTEM = """You are a code-analysis agent working on a fixed repository snapshot.
 Use only the issue and repository context below. Do not claim to have edited files.
@@ -61,28 +59,6 @@ def _priority(index: int) -> int:
     return 0 if bucket == 0 else (2 if bucket >= 8 else 1)
 
 
-def _stratified_sample(rows: list[dict[str, Any]], count: int, seed: int) -> list[dict[str, Any]]:
-    groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for row in rows:
-        groups[str(row["repo"])].append(row)
-    rng = random.Random(seed)
-    for values in groups.values():
-        rng.shuffle(values)
-    selected: list[dict[str, Any]] = []
-    names = sorted(groups)
-    while len(selected) < min(count, len(rows)):
-        progressed = False
-        for name in names:
-            if groups[name]:
-                selected.append(groups[name].pop())
-                progressed = True
-                if len(selected) >= count:
-                    break
-        if not progressed:
-            break
-    return selected
-
-
 def _source_revision(manifest: dict[str, Any], name: str, fallback: str) -> str:
     artifact = manifest.get("artifacts", {}).get(name)
     if isinstance(artifact, dict):
@@ -104,9 +80,8 @@ def _build_swebench(
     tokenizer: Any,
     repo_cache: GitRepoCache,
     preselected: bool = False,
-) -> list[WorkloadItem]:
-    selected = rows if preselected else _stratified_sample(rows, count, seed)
-    result: list[WorkloadItem] = []
+) -> Iterator[WorkloadItem]:
+    selected = rows if preselected else stratified_sample(rows, count, seed)
     for index, row in enumerate(selected):
         instance_id = str(row["instance_id"])
         repo = str(row["repo"])
@@ -133,31 +108,29 @@ def _build_swebench(
             prompt_tokens = len(
                 chat_tokens(tokenizer, messages, add_generation_prompt=True)
             )
-            result.append(
-                WorkloadItem(
-                    dataset_name="SWE-bench Verified",
-                    dataset_revision=revision,
-                    dataset_instance_id=instance_id,
-                    request_id=f"{session_id}-t{turn_id:02d}",
-                    session_id=session_id,
-                    turn_id=turn_id,
-                    priority=_priority(index),
-                    request_type="code_agent_multiturn",
-                    prefix_hash=prefix_hash,
-                    messages=[ChatMessage(**message) for message in messages],
-                    prompt_tokens=prompt_tokens,
-                    shared_prefix_tokens=len(prefix_ids),
-                    expected_output_tokens=128 if turn_id < 5 else 512,
-                    source=SourceInfo(
-                        dataset="SWE-bench/SWE-bench_Verified",
-                        license="SWE-bench terms plus source repository license",
-                        snapshot_id=snapshot_id,
-                        repo=repo,
-                        base_commit=commit,
-                        public_id=instance_id,
-                        url=f"https://github.com/{repo}",
-                    ),
-                )
+            yield WorkloadItem(
+                dataset_name="SWE-bench Verified",
+                dataset_revision=revision,
+                dataset_instance_id=instance_id,
+                request_id=f"{session_id}-t{turn_id:02d}",
+                session_id=session_id,
+                turn_id=turn_id,
+                priority=_priority(index),
+                request_type="code_agent_multiturn",
+                prefix_hash=prefix_hash,
+                messages=[ChatMessage(**message) for message in messages],
+                prompt_tokens=prompt_tokens,
+                shared_prefix_tokens=len(prefix_ids),
+                expected_output_tokens=128 if turn_id < 5 else 512,
+                source=SourceInfo(
+                    dataset="SWE-bench/SWE-bench_Verified",
+                    license="SWE-bench terms plus source repository license",
+                    snapshot_id=snapshot_id,
+                    repo=repo,
+                    base_commit=commit,
+                    public_id=instance_id,
+                    url=f"https://github.com/{repo}",
+                ),
             )
             history.extend(
                 [
@@ -165,7 +138,6 @@ def _build_swebench(
                     {"role": "assistant", "content": CHECKPOINT},
                 ]
             )
-    return result
 
 
 def _build_longbench(
@@ -175,48 +147,53 @@ def _build_longbench(
     revision: str,
     snapshot_id: str,
     tokenizer: Any,
-) -> list[WorkloadItem]:
-    result: list[WorkloadItem] = []
+) -> Iterator[WorkloadItem]:
     for index, row in enumerate(rows):
         if index >= count:
             break
         context = str(row["context"])
         system = "Repository-level code context follows.\n\n" + context
         prefix_messages = [{"role": "system", "content": system}]
-        prefix_ids = chat_tokens(tokenizer, prefix_messages, add_generation_prompt=False)
-        messages = prefix_messages + [{"role": "user", "content": str(row["input"])}]
-        prompt_tokens = len(chat_tokens(tokenizer, messages, add_generation_prompt=True))
-        public_id = str(row.get("_id", index))
-        result.append(
-            WorkloadItem(
-                dataset_name="LongBench RepoBench-P",
-                dataset_revision=revision,
-                dataset_instance_id=public_id,
-                request_id=f"longbench-{public_id}",
-                session_id=f"longbench-{public_id}",
-                turn_id=0,
-                priority=_priority(index),
-                request_type="repo_code_completion",
-                prefix_hash=token_ids_sha256(prefix_ids),
-                messages=[ChatMessage(**message) for message in messages],
-                prompt_tokens=prompt_tokens,
-                shared_prefix_tokens=len(prefix_ids),
-                expected_output_tokens=128,
-                source=SourceInfo(
-                    dataset="THUDM/LongBench:repobench-p",
-                    license="LongBench and RepoBench dataset terms",
-                    snapshot_id=snapshot_id,
-                    public_id=public_id,
-                    url="https://github.com/THUDM/LongBench",
-                ),
-            )
+        prefix_ids = chat_tokens(
+            tokenizer, prefix_messages, add_generation_prompt=False
         )
-    return result
+        messages = prefix_messages + [{"role": "user", "content": str(row["input"])}]
+        prompt_tokens = len(
+            chat_tokens(tokenizer, messages, add_generation_prompt=True)
+        )
+        public_id = str(row.get("_id", index))
+        yield WorkloadItem(
+            dataset_name="LongBench RepoBench-P",
+            dataset_revision=revision,
+            dataset_instance_id=public_id,
+            request_id=f"longbench-{public_id}",
+            session_id=f"longbench-{public_id}",
+            turn_id=0,
+            priority=_priority(index),
+            request_type="repo_code_completion",
+            prefix_hash=token_ids_sha256(prefix_ids),
+            messages=[ChatMessage(**message) for message in messages],
+            prompt_tokens=prompt_tokens,
+            shared_prefix_tokens=len(prefix_ids),
+            expected_output_tokens=128,
+            source=SourceInfo(
+                dataset="THUDM/LongBench:repobench-p",
+                license="LongBench and RepoBench dataset terms",
+                snapshot_id=snapshot_id,
+                public_id=public_id,
+                url="https://github.com/THUDM/LongBench",
+            ),
+        )
 
 
 def _normalize_sharegpt_turn(turn: dict[str, Any]) -> dict[str, str] | None:
     role = str(turn.get("from", turn.get("role", ""))).lower()
-    role_map = {"human": "user", "user": "user", "gpt": "assistant", "assistant": "assistant"}
+    role_map = {
+        "human": "user",
+        "user": "user",
+        "gpt": "assistant",
+        "assistant": "assistant",
+    }
     mapped = role_map.get(role)
     content = turn.get("value", turn.get("content"))
     if not mapped or not isinstance(content, str) or not content.strip():
@@ -231,8 +208,8 @@ def _build_sharegpt(
     revision: str,
     snapshot_id: str,
     tokenizer: Any,
-) -> list[WorkloadItem]:
-    result: list[WorkloadItem] = []
+) -> Iterator[WorkloadItem]:
+    emitted = 0
     for row in conversations:
         turns = [
             item
@@ -246,38 +223,42 @@ def _build_sharegpt(
         messages = turns[: stop + 1]
         if not messages or messages[-1]["role"] != "user":
             continue
-        index = len(result)
-        prompt_tokens = len(chat_tokens(tokenizer, messages, add_generation_prompt=True))
-        prefix = messages[:-1]
-        prefix_ids = chat_tokens(tokenizer, prefix, add_generation_prompt=False) if prefix else []
-        public_id = str(row.get("id", index))
-        result.append(
-            WorkloadItem(
-                dataset_name="ShareGPT",
-                dataset_revision=revision,
-                dataset_instance_id=public_id,
-                request_id=f"sharegpt-{index:05d}",
-                session_id=f"sharegpt-{index:05d}",
-                turn_id=0,
-                priority=_priority(index),
-                request_type="standard_chat",
-                prefix_hash=token_ids_sha256(prefix_ids),
-                messages=[ChatMessage(**message) for message in messages],
-                prompt_tokens=prompt_tokens,
-                shared_prefix_tokens=len(prefix_ids),
-                expected_output_tokens=128,
-                source=SourceInfo(
-                    dataset="ShareGPT_V3_unfiltered_cleaned_split",
-                    license="ShareGPT source dataset terms",
-                    snapshot_id=snapshot_id,
-                    public_id=public_id,
-                    url="https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered",
-                ),
-            )
+        index = emitted
+        prompt_tokens = len(
+            chat_tokens(tokenizer, messages, add_generation_prompt=True)
         )
-        if len(result) >= count:
+        prefix = messages[:-1]
+        prefix_ids = (
+            chat_tokens(tokenizer, prefix, add_generation_prompt=False)
+            if prefix
+            else []
+        )
+        public_id = str(row.get("id", index))
+        yield WorkloadItem(
+            dataset_name="ShareGPT",
+            dataset_revision=revision,
+            dataset_instance_id=public_id,
+            request_id=f"sharegpt-{index:05d}",
+            session_id=f"sharegpt-{index:05d}",
+            turn_id=0,
+            priority=_priority(index),
+            request_type="standard_chat",
+            prefix_hash=token_ids_sha256(prefix_ids),
+            messages=[ChatMessage(**message) for message in messages],
+            prompt_tokens=prompt_tokens,
+            shared_prefix_tokens=len(prefix_ids),
+            expected_output_tokens=128,
+            source=SourceInfo(
+                dataset="ShareGPT_V3_unfiltered_cleaned_split",
+                license="ShareGPT source dataset terms",
+                snapshot_id=snapshot_id,
+                public_id=public_id,
+                url="https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered",
+            ),
+        )
+        emitted += 1
+        if emitted >= count:
             break
-    return result
 
 
 def _build_controlled(
@@ -286,8 +267,7 @@ def _build_controlled(
     turns: int,
     prefix_tiers: list[int],
     tokenizer: Any,
-) -> list[WorkloadItem]:
-    result: list[WorkloadItem] = []
+) -> Iterator[WorkloadItem]:
     for index in range(count):
         target = prefix_tiers[index % len(prefix_tiers)]
         line = f"# controlled repository session {index:04d}\nclass CacheProbe{index}: pass\n"
@@ -299,28 +279,28 @@ def _build_controlled(
         for turn_id in range(turns):
             question = f"Inspect controlled symbol {index} at analysis turn {turn_id}."
             messages = history + [{"role": "user", "content": question}]
-            result.append(
-                WorkloadItem(
-                    dataset_name="Controlled Prefix",
-                    dataset_revision="generated-v1",
-                    dataset_instance_id=session_id,
-                    request_id=f"{session_id}-t{turn_id:02d}",
-                    session_id=session_id,
-                    turn_id=turn_id,
-                    priority=_priority(index),
-                    request_type="controlled_shared_prefix",
-                    prefix_hash=prefix_hash,
-                    messages=[ChatMessage(**message) for message in messages],
-                    prompt_tokens=len(chat_tokens(tokenizer, messages, add_generation_prompt=True)),
-                    shared_prefix_tokens=len(prefix_ids),
-                    expected_output_tokens=32,
-                    source=SourceInfo(
-                        dataset="controlled-prefix-v1",
-                        license="generated",
-                        snapshot_id="seed-42",
-                        public_id=session_id,
-                    ),
-                )
+            yield WorkloadItem(
+                dataset_name="Controlled Prefix",
+                dataset_revision="generated-v1",
+                dataset_instance_id=session_id,
+                request_id=f"{session_id}-t{turn_id:02d}",
+                session_id=session_id,
+                turn_id=turn_id,
+                priority=_priority(index),
+                request_type="controlled_shared_prefix",
+                prefix_hash=prefix_hash,
+                messages=[ChatMessage(**message) for message in messages],
+                prompt_tokens=len(
+                    chat_tokens(tokenizer, messages, add_generation_prompt=True)
+                ),
+                shared_prefix_tokens=len(prefix_ids),
+                expected_output_tokens=32,
+                source=SourceInfo(
+                    dataset="controlled-prefix-v1",
+                    license="generated",
+                    snapshot_id="seed-42",
+                    public_id=session_id,
+                ),
             )
             history.extend(
                 [
@@ -328,10 +308,11 @@ def _build_controlled(
                     {"role": "assistant", "content": CHECKPOINT},
                 ]
             )
-    return result
 
 
-def generate(config_path: Path, profile_name: str, selected: set[str]) -> dict[str, Any]:
+def generate(
+    config_path: Path, profile_name: str, selected: set[str]
+) -> dict[str, Any]:
     config = load_yaml(config_path)
     profile = config["profiles"][profile_name]
     data_root = Path(config["data_root"])
@@ -340,28 +321,51 @@ def generate(config_path: Path, profile_name: str, selected: set[str]) -> dict[s
     output_dir.mkdir(parents=True, exist_ok=True)
     tokenizer = load_tokenizer(config["tokenizer_path"])
     dataset_manifest_path = data_root / "manifests" / "datasets.json"
-    dataset_manifest = json.loads(dataset_manifest_path.read_text()) if dataset_manifest_path.exists() else {}
-    snapshot_id = sha256_file(dataset_manifest_path) if dataset_manifest_path.exists() else "unmanifested"
+    dataset_manifest = (
+        json.loads(dataset_manifest_path.read_text())
+        if dataset_manifest_path.exists()
+        else {}
+    )
+    snapshot_id = (
+        sha256_file(dataset_manifest_path)
+        if dataset_manifest_path.exists()
+        else "unmanifested"
+    )
     repo_cache = GitRepoCache(data_root / "repo-cache")
-    outputs: dict[str, Any] = {}
-    combined: list[WorkloadItem] = []
+    artifact_paths: list[Path] = []
+    artifacts: dict[str, Any] = {}
+
+    def materialize(name: str, items: Iterable[WorkloadItem]) -> None:
+        path = output_dir / f"{name}.jsonl"
+        count = write_jsonl(path, items)
+        artifact_paths.append(path)
+        artifacts[name] = {
+            "path": str(path),
+            "rows": count,
+            "sha256": sha256_file(path),
+        }
 
     if "swebench" in selected:
         path = raw_dir / "swebench_verified.jsonl"
         swebench_rows = list(read_jsonl(path))
-        instance_ids = [str(value) for value in profile.get("swebench_instance_ids", [])]
+        instance_ids = [
+            str(value) for value in profile.get("swebench_instance_ids", [])
+        ]
         if instance_ids:
             if len(instance_ids) != int(profile["swebench_sessions"]):
                 raise ValueError("swebench_instance_ids must match swebench_sessions")
             by_id = {str(row["instance_id"]): row for row in swebench_rows}
-            missing = [instance_id for instance_id in instance_ids if instance_id not in by_id]
+            missing = [
+                instance_id for instance_id in instance_ids if instance_id not in by_id
+            ]
             if missing:
                 raise ValueError(f"Unknown SWE-bench instance IDs: {missing}")
             swebench_rows = [by_id[instance_id] for instance_id in instance_ids]
         if profile.get("require_prefetched_snapshots", False):
             snapshot_root = data_root / "repo-cache" / "snapshots"
             swebench_rows = [
-                row for row in swebench_rows
+                row
+                for row in swebench_rows
                 if (
                     snapshot_root
                     / str(row["repo"]).replace("/", "__")
@@ -384,8 +388,7 @@ def generate(config_path: Path, profile_name: str, selected: set[str]) -> dict[s
             repo_cache=repo_cache,
             preselected=bool(instance_ids),
         )
-        outputs["swebench"] = items
-        combined.extend(items)
+        materialize("swebench", items)
 
     if "longbench" in selected:
         path = raw_dir / "longbench_repobench-p.jsonl"
@@ -396,8 +399,7 @@ def generate(config_path: Path, profile_name: str, selected: set[str]) -> dict[s
             snapshot_id=snapshot_id,
             tokenizer=tokenizer,
         )
-        outputs["longbench"] = items
-        combined.extend(items)
+        materialize("longbench", items)
 
     if "sharegpt" in selected:
         path = raw_dir / "sharegpt.json"
@@ -405,12 +407,13 @@ def generate(config_path: Path, profile_name: str, selected: set[str]) -> dict[s
             items = _build_sharegpt(
                 ijson.items(handle, "item"),
                 count=int(profile["sharegpt_sessions"]),
-                revision=_source_revision(dataset_manifest, "sharegpt", sha256_file(path)),
+                revision=_source_revision(
+                    dataset_manifest, "sharegpt", sha256_file(path)
+                ),
                 snapshot_id=snapshot_id,
                 tokenizer=tokenizer,
             )
-        outputs["sharegpt"] = items
-        combined.extend(items)
+            materialize("sharegpt", items)
 
     if "controlled" in selected:
         items = _build_controlled(
@@ -419,16 +422,16 @@ def generate(config_path: Path, profile_name: str, selected: set[str]) -> dict[s
             prefix_tiers=[int(value) for value in profile["prefix_tiers"]],
             tokenizer=tokenizer,
         )
-        outputs["controlled"] = items
-        combined.extend(items)
+        materialize("controlled", items)
 
-    artifacts: dict[str, Any] = {}
-    for name, items in outputs.items():
-        path = output_dir / f"{name}.jsonl"
-        count = write_jsonl(path, items)
-        artifacts[name] = {"path": str(path), "rows": count, "sha256": sha256_file(path)}
     combined_path = output_dir / "combined.jsonl"
-    write_jsonl(combined_path, combined)
+    combined_rows = 0
+    with combined_path.open("w", encoding="utf-8") as combined_handle:
+        for path in artifact_paths:
+            with path.open(encoding="utf-8") as artifact_handle:
+                for line in artifact_handle:
+                    combined_handle.write(line)
+                    combined_rows += 1
     manifest = {
         "schema_version": "1.0",
         "created_at": datetime.now(UTC).isoformat(),
@@ -438,7 +441,7 @@ def generate(config_path: Path, profile_name: str, selected: set[str]) -> dict[s
         "tokenizer_fingerprint": tokenizer_fingerprint(config["tokenizer_path"]),
         "combined": {
             "path": str(combined_path),
-            "rows": len(combined),
+            "rows": combined_rows,
             "sha256": sha256_file(combined_path),
         },
         "artifacts": artifacts,
@@ -448,9 +451,13 @@ def generate(config_path: Path, profile_name: str, selected: set[str]) -> dict[s
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate reproducible serving workloads")
+    parser = argparse.ArgumentParser(
+        description="Generate reproducible serving workloads"
+    )
     parser.add_argument("--config", default="configs/workloads.yaml")
-    parser.add_argument("--profile", default="small", help="Profile name from configs/workloads.yaml")
+    parser.add_argument(
+        "--profile", default="small", help="Profile name from configs/workloads.yaml"
+    )
     parser.add_argument(
         "--datasets",
         default="swebench,longbench,sharegpt,controlled",
@@ -459,7 +466,9 @@ def main() -> None:
     args = parser.parse_args()
     available = load_yaml(Path(args.config))["profiles"]
     if args.profile not in available:
-        parser.error(f"unknown profile {args.profile!r}; choose from {', '.join(available)}")
+        parser.error(
+            f"unknown profile {args.profile!r}; choose from {', '.join(available)}"
+        )
     selected = {name.strip() for name in args.datasets.split(",") if name.strip()}
     manifest = generate(Path(args.config), args.profile, selected)
     print(json.dumps(manifest, ensure_ascii=False, indent=2))

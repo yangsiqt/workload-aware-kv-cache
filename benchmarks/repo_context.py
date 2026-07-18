@@ -10,7 +10,6 @@ from hashlib import sha256
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-
 _PATCH_PATH = re.compile(r"^\+\+\+ b/(.+)$", re.MULTILINE)
 _ALLOWED_SUFFIXES = {".py", ".md", ".rst", ".toml", ".yaml", ".yml", ".json"}
 
@@ -28,7 +27,9 @@ class GitRepoCache:
     def _archive_path(self, repo: str, commit: str) -> Path:
         return self.root / "snapshots" / repo.replace("/", "__") / f"{commit}.tar.gz"
 
-    def _run(self, args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
+    def _run(
+        self, args: list[str], *, check: bool = True
+    ) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
         env["GIT_NO_LAZY_FETCH"] = "1"
         if self.ssh_key is not None and self.ssh_key.exists():
@@ -36,7 +37,9 @@ class GitRepoCache:
                 f"ssh -i {self.ssh_key} -o IdentitiesOnly=yes "
                 "-o StrictHostKeyChecking=accept-new"
             )
-        return subprocess.run(args, check=check, capture_output=True, text=True, env=env)
+        return subprocess.run(
+            args, check=check, capture_output=True, text=True, env=env
+        )
 
     def ensure_repo(self, repo: str) -> Path:
         git_dir = self._git_dir(repo)
@@ -47,9 +50,7 @@ class GitRepoCache:
                 else f"https://github.com/{repo}.git"
             )
             git_dir.mkdir(parents=True)
-            self._run(
-                ["git", "init", "--bare", str(git_dir)]
-            )
+            self._run(["git", "init", "--bare", str(git_dir)])
             self._run(["git", f"--git-dir={git_dir}", "remote", "add", "origin", url])
         return git_dir
 
@@ -82,26 +83,88 @@ class GitRepoCache:
             return archive
         archive.parent.mkdir(parents=True, exist_ok=True)
         temporary = archive.with_suffix(archive.suffix + ".part")
-        url = f"https://codeload.github.com/{repo}/tar.gz/{commit}"
+        archive_mirror = os.getenv("GITHUB_ARCHIVE_MIRROR", "").rstrip("/")
+        url = (
+            f"{archive_mirror}/{repo}/archive/{commit}.tar.gz"
+            if archive_mirror
+            else f"https://codeload.github.com/{repo}/tar.gz/{commit}"
+        )
         env = os.environ.copy()
-        for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy"):
-            env.pop(name, None)
-        for attempt in range(3):
-            result = subprocess.run(
-                [
-                    "curl", "--fail", "--location", "--silent", "--show-error",
-                    "--retry", "5", "--retry-all-errors", "--retry-delay", "1",
-                    "--continue-at", "-", "--output", str(temporary), url,
-                ],
-                check=False, env=env, text=True, capture_output=True,
+        download_mode = env.get("GITHUB_DOWNLOAD_MODE", "auto").lower()
+        if archive_mirror and "GITHUB_DOWNLOAD_MODE" not in env:
+            download_mode = "direct"
+        if download_mode not in {"auto", "direct", "proxy"}:
+            raise ValueError("GITHUB_DOWNLOAD_MODE must be one of: auto, direct, proxy")
+        proxy_names = (
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "ALL_PROXY",
+            "http_proxy",
+            "https_proxy",
+        )
+        direct_env = env.copy()
+        for name in proxy_names:
+            direct_env.pop(name, None)
+        has_proxy = any(env.get(name) for name in proxy_names)
+        modes = [download_mode]
+        if download_mode == "auto":
+            modes = ["direct", "proxy"] if has_proxy else ["direct"]
+        result: subprocess.CompletedProcess[str] | None = None
+        for mode in modes:
+            temporary.unlink(missing_ok=True)
+            mode_env = direct_env if mode == "direct" else env
+            probing_direct = (
+                download_mode == "auto" and mode == "direct" and has_proxy
             )
-            if result.returncode == 0 and tarfile.is_tarfile(temporary):
-                temporary.replace(archive)
-                return archive
-            if result.returncode == 33:
+            speed_guard = (
+                ["--speed-limit", "131072", "--speed-time", "15"]
+                if probing_direct
+                else []
+            )
+            retry_args = (
+                []
+                if probing_direct
+                else [
+                    "--retry",
+                    "5",
+                    "--retry-all-errors",
+                    "--retry-delay",
+                    "1",
+                ]
+            )
+            attempts = 1 if probing_direct else 3
+            for attempt in range(attempts):
+                result = subprocess.run(
+                    [
+                        "curl",
+                        "--fail",
+                        "--location",
+                        "--silent",
+                        "--show-error",
+                        *retry_args,
+                        "--connect-timeout",
+                        "10",
+                        *speed_guard,
+                        "--output",
+                        str(temporary),
+                        url,
+                    ],
+                    check=False,
+                    env=mode_env,
+                    text=True,
+                    capture_output=True,
+                )
+                if result.returncode == 0 and tarfile.is_tarfile(temporary):
+                    temporary.replace(archive)
+                    return archive
                 temporary.unlink(missing_ok=True)
-            time.sleep(attempt + 1)
-        raise RuntimeError(f"Failed to download valid snapshot {repo}@{commit}: {result.stderr}")
+                time.sleep(attempt + 1)
+            if mode == "direct" and download_mode == "auto":
+                continue
+        detail = result.stderr if result is not None else "no download attempted"
+        raise RuntimeError(
+            f"Failed to download valid snapshot {repo}@{commit}: {detail}"
+        )
 
     def prefetch_archives(
         self, snapshots: list[tuple[str, str]], workers: int = 8
@@ -120,10 +183,15 @@ class GitRepoCache:
                 with path.open("rb") as handle:
                     for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                         digest.update(chunk)
-                rows.append({
-                    "repo": repo, "commit": commit, "path": str(path),
-                    "bytes": path.stat().st_size, "sha256": digest.hexdigest(),
-                })
+                rows.append(
+                    {
+                        "repo": repo,
+                        "commit": commit,
+                        "path": str(path),
+                        "bytes": path.stat().st_size,
+                        "sha256": digest.hexdigest(),
+                    }
+                )
         return sorted(rows, key=lambda row: (row["repo"], row["commit"]))
 
     def list_files(self, repo: str, commit: str) -> list[str]:
@@ -165,7 +233,11 @@ class GitRepoCache:
                     members[relative] = member
             all_files = sorted(members)
             changed = [path for path in _PATCH_PATH.findall(patch) if path in members]
-            roots = {PurePosixPath(path).parts[0] for path in changed if PurePosixPath(path).parts}
+            roots = {
+                PurePosixPath(path).parts[0]
+                for path in changed
+                if PurePosixPath(path).parts
+            }
             related = [
                 path
                 for path in all_files

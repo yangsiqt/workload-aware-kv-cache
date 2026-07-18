@@ -1,0 +1,29 @@
+{
+  "created_at": "2026-07-18T10:12:22.355315+00:00",
+  "request_rate": 2.0,
+  "schema_version": "1.0",
+  "seeds": [
+    42,
+    43,
+    44
+  ],
+  "traces": [
+    {
+      "path": "/root/workload-aware-kv-cache-data/arrival-traces/final/swe-final-poisson-2rps-r1.jsonl",
+      "rows": 300,
+      "sha256": "aae483aa4bd0657e461463c65262f24a7ab9ccb1664d6d8bc6c95b67c1561ed4"
+    },
+    {
+      "path": "/root/workload-aware-kv-cache-data/arrival-traces/final/swe-final-poisson-2rps-r2.jsonl",
+      "rows": 300,
+      "sha256": "0d8008a226366571315ee88c96d6b604543a222020e4a7cf232db2a998173ee2"
+    },
+    {
+      "path": "/root/workload-aware-kv-cache-data/arrival-traces/final/swe-final-poisson-2rps-r3.jsonl",
+      "rows": 300,
+      "sha256": "2d64e895d82c5ef501fc8d2feb9ca335b085f70ec950fe84a4922f30b4fbe7e1"
+    }
+  ],
+  "workload_path": "/root/workload-aware-kv-cache-data/processed/final/swebench.jsonl",
+  "workload_sha256": "8b7540c709413cf8a4cb814d1e882c452256d5277780d047e4fb7d1502475973"
+}
