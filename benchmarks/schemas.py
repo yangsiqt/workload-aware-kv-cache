@@ -80,6 +80,7 @@ class RunManifest(BaseModel):
     run_id: str
     created_at: str
     project_commit: str
+    repository_states: dict[str, dict[str, Any]] = Field(default_factory=dict)
     mode: Literal["closed_loop", "poisson"]
     endpoint: str
     model: str
@@ -89,6 +90,12 @@ class RunManifest(BaseModel):
     max_concurrency: int
     request_rate: float | None = None
     seed: int = 42
+    route_policy: str = "direct"
+    router_config_path: str | None = None
+    router_config_sha256: str | None = None
+    launch_command: str | None = None
+    benchmark_argv: list[str] = Field(default_factory=list)
+    metric_definitions: dict[str, str] = Field(default_factory=dict)
     arrival_trace_path: str | None = None
     arrival_trace_sha256: str | None = None
     simulated: bool = False

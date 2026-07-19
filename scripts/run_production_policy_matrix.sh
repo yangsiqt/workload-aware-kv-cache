@@ -50,6 +50,14 @@ for policy in "${policy_array[@]}"; do
   fi
 
   run_id="sim-production-${policy}-c${CONCURRENCY}-${RUN_TAG}"
+  manifest_args=(
+    --launch-command "POLICY=$policy scripts/run_production_mock_stack.sh"
+  )
+  if [[ "$policy" == "agent_slo_aware" ]]; then
+    manifest_args+=(
+      --router-config "$ROOT/configs/production_stack/agent-slo-pr3.yaml"
+    )
+  fi
   python -m benchmarks.run_benchmark "$WORKLOAD" \
     --config "$ROOT/configs/benchmark-production-mock.yaml" \
     --output-root "$OUTPUT_ROOT" \
@@ -57,7 +65,8 @@ for policy in "${policy_array[@]}"; do
     --concurrency "$CONCURRENCY" \
     --route-policy "$policy" \
     --run-id "$run_id" \
-    --simulated
+    --simulated \
+    "${manifest_args[@]}"
   run_dirs+=("$OUTPUT_ROOT/$run_id")
 
   kill -TERM "$STACK_PID" 2>/dev/null || true

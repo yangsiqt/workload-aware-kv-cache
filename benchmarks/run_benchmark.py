@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import math
 import random
+import sys
 import time
 import uuid
 from collections import defaultdict
@@ -18,6 +19,7 @@ from benchmarks.io_utils import (
     load_yaml,
     project_commit,
     read_jsonl,
+    repository_state,
     sha256_file,
     write_json,
     write_jsonl,
@@ -41,6 +43,27 @@ def percentile(values: list[float], quantile: float) -> float | None:
     if lower == upper:
         return ordered[lower]
     return ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
+
+
+def validate_workload_ids(items: list[WorkloadItem]) -> None:
+    request_ids = [item.request_id for item in items]
+    if len(request_ids) != len(set(request_ids)):
+        raise ValueError("workload request IDs must be unique")
+
+
+def validate_arrival_trace(
+    items: list[WorkloadItem], trace: list[ArrivalTraceItem]
+) -> None:
+    trace_ids = [value.request_id for value in trace]
+    if len(trace_ids) != len(set(trace_ids)):
+        raise ValueError("arrival trace request IDs must be unique")
+    if len(trace_ids) != len(items) or set(trace_ids) != {
+        item.request_id for item in items
+    }:
+        raise ValueError("arrival trace request IDs must exactly match workload")
+    offsets = [value.offset_s for value in trace]
+    if offsets != sorted(offsets):
+        raise ValueError("arrival trace offsets must be non-decreasing")
 
 
 async def _request(
@@ -76,6 +99,7 @@ async def _request(
             "X-Prefix-Hash": item.prefix_hash,
             "X-Priority": str(item.priority),
             "X-Prompt-Tokens": str(item.prompt_tokens),
+            "X-Shared-Prefix-Tokens": str(item.shared_prefix_tokens),
             "X-Expected-Output-Tokens": str(item.expected_output_tokens),
             "X-Route-Policy": route_policy,
         }
@@ -89,7 +113,8 @@ async def _request(
             else:
                 async for raw in response.content.iter_any():
                     emitted = stream.feed(raw)
-                    chunk_times.extend(time.perf_counter() for _ in emitted)
+                    if emitted:
+                        chunk_times.append(time.perf_counter())
                 error = stream.validation_error()
     except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
         error = f"{type(exc).__name__}: {exc}"
@@ -139,6 +164,7 @@ async def _request(
 async def run(args: argparse.Namespace) -> Path:
     config = load_yaml(args.config)
     items = [WorkloadItem.model_validate(row) for row in read_jsonl(args.workload)]
+    validate_workload_ids(items)
     tokenizer = load_tokenizer(config["tokenizer_path"])
     run_id = (
         args.run_id
@@ -189,11 +215,7 @@ async def run(args: argparse.Namespace) -> Path:
                     for row in read_jsonl(args.arrival_trace)
                 ]
                 by_id = {item.request_id: item for item in items}
-                trace_ids = {value.request_id for value in trace}
-                if trace_ids != set(by_id):
-                    raise ValueError(
-                        "arrival trace request IDs must exactly match workload"
-                    )
+                validate_arrival_trace(items, trace)
                 schedule = [
                     (value.offset_s, by_id[value.request_id]) for value in trace
                 ]
@@ -230,10 +252,21 @@ async def run(args: argparse.Namespace) -> Path:
     results.sort(key=lambda value: (value.started_at_s, value.request_id))
     results_path = output_dir / "requests.jsonl"
     write_jsonl(results_path, (result.model_dump() for result in results))
+    component_roots = {
+        "project": Path(__file__).resolve().parents[1],
+        "production_stack": Path("/root/production-stack"),
+        "vllm": Path("/root/vllm"),
+        "lmcache": Path("/root/LMCache"),
+        "mooncake": Path("/root/Mooncake"),
+    }
+    router_config = args.router_config.resolve() if args.router_config else None
     manifest = RunManifest(
         run_id=run_id,
         created_at=datetime.now(UTC).isoformat(),
         project_commit=project_commit(Path(__file__).resolve().parents[1]),
+        repository_states={
+            name: repository_state(path) for name, path in component_roots.items()
+        },
         mode=args.mode,
         endpoint=config["endpoint"],
         model=config["model"],
@@ -243,6 +276,17 @@ async def run(args: argparse.Namespace) -> Path:
         max_concurrency=args.concurrency,
         request_rate=args.request_rate if args.mode == "poisson" else None,
         seed=args.seed,
+        route_policy=args.route_policy,
+        router_config_path=str(router_config) if router_config else None,
+        router_config_sha256=sha256_file(router_config) if router_config else None,
+        launch_command=args.launch_command,
+        benchmark_argv=sys.argv,
+        metric_definitions={
+            "ttft": "request start to first non-empty SSE content delta",
+            "e2e": "request start to completed SSE stream including [DONE]",
+            "tpot": "(E2E - TTFT) / (retokenized output tokens - 1)",
+            "itl": "client-observed interval between transport chunks containing content; not server token emission time",
+        },
         arrival_trace_path=(
             str(args.arrival_trace.resolve()) if args.arrival_trace else None
         ),
@@ -275,6 +319,8 @@ def main() -> None:
     parser.add_argument("--run-id")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--arrival-trace", type=Path)
+    parser.add_argument("--router-config", type=Path)
+    parser.add_argument("--launch-command")
     parser.add_argument("--simulated", action="store_true")
     args = parser.parse_args()
     if args.concurrency < 1 or args.request_rate <= 0:

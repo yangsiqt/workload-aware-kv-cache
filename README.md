@@ -56,7 +56,7 @@ disk/file storage. Override the data location with `WORKLOAD_DATA_ROOT`.
 - TTFT: request start to first non-empty streamed content delta.
 - E2E: request start to stream completion.
 - TPOT: `(E2E - TTFT) / (output_tokens - 1)`.
-- ITL: inter-SSE-chunk latency. It is not presented as exact per-token latency.
+- ITL: client-observed interval between transport chunks containing non-empty SSE content. It is not exact server-side token emission latency.
 
 See `configs/` for reproducible defaults. GPU measurements must record the
 hardware topology, model revision, project commit, engine version, and full

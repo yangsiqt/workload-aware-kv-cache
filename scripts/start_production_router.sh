@@ -36,7 +36,11 @@ args=(
   --max-instance-failover-reroute-attempts 1
 )
 if [[ "$POLICY" == "agent_slo_aware" ]]; then
-  args+=(--agent-slo-config "$POLICY_CONFIG" --agent-slo-trace-path "$TRACE_PATH")
+  args+=(
+    --agent-slo-config "$POLICY_CONFIG"
+    --agent-slo-trace-path "$TRACE_PATH"
+    --session-key "$SESSION_KEY"
+  )
 fi
 if [[ "$POLICY" == "session" ]]; then
   args+=(--session-key "$SESSION_KEY")

@@ -10,7 +10,6 @@ from typing import Any, Iterable, Iterator
 
 import yaml
 
-
 _ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?}")
 
 
@@ -81,3 +80,25 @@ def project_commit(project_root: str | Path) -> str:
     )
     return result.stdout.strip() if result.returncode == 0 else "uncommitted"
 
+
+def repository_state(project_root: str | Path) -> dict[str, Any]:
+    root = Path(project_root)
+    commit = project_commit(root)
+    branch = subprocess.run(
+        ["git", "-C", str(root), "branch", "--show-current"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    status = subprocess.run(
+        ["git", "-C", str(root), "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return {
+        "path": str(root.resolve()),
+        "commit": commit,
+        "branch": branch.stdout.strip() if branch.returncode == 0 else "unknown",
+        "dirty": status.returncode != 0 or bool(status.stdout.strip()),
+    }

@@ -8,7 +8,14 @@ import pytest
 from benchmarks.generate_arrival_traces import generate
 from benchmarks.io_utils import read_jsonl, write_jsonl
 from benchmarks.join_traces import join
-from benchmarks.schemas import ChatMessage, RequestResult, SourceInfo, WorkloadItem
+from benchmarks.run_benchmark import validate_arrival_trace, validate_workload_ids
+from benchmarks.schemas import (
+    ArrivalTraceItem,
+    ChatMessage,
+    RequestResult,
+    SourceInfo,
+    WorkloadItem,
+)
 from benchmarks.validate_trace import validate
 
 
@@ -52,11 +59,13 @@ def request_result(request_id: str) -> RequestResult:
     )
 
 
-def route_event(request_id: str, event: str, success=None) -> dict:
+def route_event(request_id: str, event: str, success=None, attempt_id: int = 0) -> dict:
     return {
         "schema_version": "1.0",
         "event": event,
         "request_id": request_id,
+        "attempt_id": attempt_id,
+        "decision_id": f"{request_id}:{attempt_id}",
         "policy": "P-R3",
         "backend_url": "http://backend-a",
         "reason": "queue_prefill_slo_cost",
@@ -100,6 +109,29 @@ def test_arrival_traces_are_reproducible_and_cover_workload(tmp_path: Path) -> N
     assert [row["offset_s"] for row in rows] == sorted(row["offset_s"] for row in rows)
 
 
+def test_arrival_validation_rejects_duplicate_ids_and_unsorted_offsets() -> None:
+    items = [workload_item("a", "a", 0), workload_item("b", "b", 0)]
+    validate_workload_ids(items)
+    with pytest.raises(ValueError, match="must be unique"):
+        validate_workload_ids([items[0], items[0]])
+    with pytest.raises(ValueError, match="must be unique"):
+        validate_arrival_trace(
+            items,
+            [
+                ArrivalTraceItem(request_id="a", offset_s=0),
+                ArrivalTraceItem(request_id="a", offset_s=1),
+            ],
+        )
+    with pytest.raises(ValueError, match="non-decreasing"):
+        validate_arrival_trace(
+            items,
+            [
+                ArrivalTraceItem(request_id="a", offset_s=1),
+                ArrivalTraceItem(request_id="b", offset_s=0),
+            ],
+        )
+
+
 def test_trace_validation_and_join(tmp_path: Path) -> None:
     client = tmp_path / "client.jsonl"
     router = tmp_path / "router.jsonl"
@@ -115,7 +147,9 @@ def test_trace_validation_and_join(tmp_path: Path) -> None:
 
     assert validate(router)["valid"]
     assert join(client, router, output) == 1
-    assert json.loads(output.read_text())["request_id"] == "request"
+    joined = json.loads(output.read_text())
+    assert joined["request_id"] == "request"
+    assert len(joined["attempts"]) == 1
 
 
 def test_trace_join_rejects_missing_completion(tmp_path: Path) -> None:
@@ -123,8 +157,58 @@ def test_trace_join_rejects_missing_completion(tmp_path: Path) -> None:
     router = tmp_path / "router.jsonl"
     write_jsonl(client, [request_result("request")])
     write_jsonl(router, [route_event("request", "decision")])
-    with pytest.raises(ValueError, match="missing completion"):
+    with pytest.raises(ValueError, match="invalid route trace"):
         join(client, router, tmp_path / "joined.jsonl")
+
+
+def test_trace_validation_rejects_duplicates_and_orphans(tmp_path: Path) -> None:
+    router = tmp_path / "router.jsonl"
+    write_jsonl(
+        router,
+        [
+            route_event("request", "decision"),
+            route_event("request", "decision"),
+            route_event("request", "completion", True),
+            route_event("orphan", "completion", False),
+        ],
+    )
+    report = validate(router)
+    assert not report["valid"]
+    assert report["duplicate_decisions"] == ["request:0"]
+    assert report["orphan_completions"] == ["orphan:0"]
+
+
+def test_trace_validation_rejects_mismatched_attempt_pair(tmp_path: Path) -> None:
+    router = tmp_path / "router.jsonl"
+    decision = route_event("request", "decision")
+    completion = route_event("other", "completion", True)
+    completion["decision_id"] = decision["decision_id"]
+    write_jsonl(router, [decision, completion])
+
+    report = validate(router)
+    assert not report["valid"]
+    assert report["mismatched_events"] == ["request:0"]
+
+
+def test_trace_join_preserves_failover_attempts(tmp_path: Path) -> None:
+    client = tmp_path / "client.jsonl"
+    router = tmp_path / "router.jsonl"
+    output = tmp_path / "joined.jsonl"
+    write_jsonl(client, [request_result("request")])
+    write_jsonl(
+        router,
+        [
+            route_event("request", "decision", attempt_id=0),
+            route_event("request", "completion", False, attempt_id=0),
+            route_event("request", "decision", attempt_id=1),
+            route_event("request", "completion", True, attempt_id=1),
+        ],
+    )
+
+    assert join(client, router, output) == 1
+    joined = json.loads(output.read_text())
+    assert [item["attempt_id"] for item in joined["attempts"]] == [0, 1]
+    assert joined["route"]["decision_id"] == "request:1"
 
 
 def test_environment_log_file_can_be_overridden(tmp_path: Path) -> None:

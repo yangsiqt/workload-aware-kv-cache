@@ -13,6 +13,7 @@ class RouteMetadata(BaseModel):
     prefix_hash: str = ""
     priority: int = Field(default=1, ge=0, le=2)
     prompt_tokens: int = Field(default=0, ge=0)
+    shared_prefix_tokens: int = Field(default=0, ge=0)
     expected_output_tokens: int = Field(default=0, ge=0)
     metadata_source: str = "fallback"
 
@@ -38,9 +39,11 @@ class CandidateTrace(BaseModel):
 class RouteTraceEvent(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    schema_version: str = "1.0"
+    schema_version: Literal["1.0", "1.1"] = "1.1"
     event: Literal["decision", "completion"]
     request_id: str
+    attempt_id: int = Field(default=0, ge=0)
+    decision_id: str = ""
     policy: str
     backend_url: str
     reason: str
@@ -50,8 +53,19 @@ class RouteTraceEvent(BaseModel):
     success: bool | None = None
     error: str = ""
 
+    def model_post_init(self, __context: Any) -> None:
+        if not self.decision_id:
+            self.decision_id = f"{self.request_id}:{self.attempt_id}"
+
+
+class RouteAttempt(BaseModel):
+    attempt_id: int = Field(ge=0)
+    decision: RouteTraceEvent
+    completion: RouteTraceEvent
+
 
 class JoinedTrace(BaseModel):
     request_id: str
     client: dict[str, Any]
     route: RouteTraceEvent
+    attempts: list[RouteAttempt]

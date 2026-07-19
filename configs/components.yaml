@@ -6,7 +6,9 @@ vllm:
   source_tag: "v0.25.0"
   commit: "702f4814fe54fabff350d43cb753ae3e47c0c276"
 production_stack:
-  commit: "90ddf82b97ec9b09098de9976dc8dcb75c6be363"
+  upstream_commit: "90ddf82b97ec9b09098de9976dc8dcb75c6be363"
+  feature_commit: "936d5b8"
+  feature_branch: "feature/agent-slo-aware-router"
   environment: "/root/.venvs/vllm-router"
 lmcache:
   package: "0.5.1"
