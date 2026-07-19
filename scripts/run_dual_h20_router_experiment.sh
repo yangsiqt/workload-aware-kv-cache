@@ -17,6 +17,7 @@ PRODUCTION_STACK_ROOT="${PRODUCTION_STACK_ROOT:-/root/production-stack}"
 RUN_ROOT="${RUN_ROOT:-/root/workload-aware-kv-cache-data/runs}"
 LOG_ROOT="${LOG_ROOT:-/root/log/workload-aware-kv-cache}"
 ROUTER_CONFIG="${ROUTER_CONFIG:-$PROJECT_ROOT/configs/production_stack/agent-slo-dual-h20.yaml}"
+PREFIX_MIN_MATCH_LENGTH="${PREFIX_MIN_MATCH_LENGTH:-512}"
 MODEL="${MODEL:-Qwen3-30B-A3B-Instruct-2507}"
 BACKENDS=("http://127.0.0.1:8000" "http://127.0.0.1:8001")
 ROUTER_URL="http://127.0.0.1:9003"
@@ -71,7 +72,7 @@ router_cmd=(
   --max-instance-failover-reroute-attempts 1
 )
 if [[ "$POLICY" == "prefixaware" ]]; then
-  router_cmd+=(--prefix-min-match-length 128)
+  router_cmd+=(--prefix-min-match-length "$PREFIX_MIN_MATCH_LENGTH")
 elif [[ "$POLICY" == "agent_slo_aware" ]]; then
   router_cmd+=(
     --agent-slo-config "$ROUTER_CONFIG"
@@ -108,7 +109,7 @@ benchmark_cmd=(
   --mode "$MODE" --concurrency "$CONCURRENCY"
   --route-policy "$POLICY" --run-id "$RUN_ID"
   --output-root "$RUN_ROOT"
-  --launch-command "$0 $*"
+  --launch-command "PREFIX_MIN_MATCH_LENGTH=$PREFIX_MIN_MATCH_LENGTH $0 $*"
 )
 if [[ "$POLICY" == "agent_slo_aware" ]]; then
   benchmark_cmd+=(--router-config "$ROUTER_CONFIG")
