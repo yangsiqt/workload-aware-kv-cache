@@ -1,0 +1,17 @@
+# SINGLE_GPU SCREENING only. Recalibrate with the four-GPU workload before use.
+policy_level: "P-R3"
+queue_running_ms: 25.0
+queue_waiting_ms: 80.0
+output_token_ms: 0.1
+prefill_intercept_ms: 0.0
+prefill_tokens_per_s: 7800.0
+hotspot_running_gap: 2
+stale_penalty_ms: 100.0
+slo_violation_penalty_ms: 500.0
+slo_ms_high: 1000.0
+slo_ms_normal: 2500.0
+slo_ms_low: 5000.0
+external_enabled: false
+pd_enabled: false
+failure_threshold: 2
+cooldown_s: 5.0

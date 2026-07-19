@@ -14,7 +14,8 @@ fi
 : "${MODEL_PATH:?Set MODEL_PATH to the Qwen3 model directory}"
 SERVED_MODEL_NAME="${SERVED_MODEL_NAME:-Qwen3-30B-A3B-Instruct-2507}"
 TP_SIZE="${TP_SIZE:-1}"
-MAX_MODEL_LEN="${MAX_MODEL_LEN:-32768}"
+# The 32K fixtures include chat-template and suffix tokens beyond the shared prefix.
+MAX_MODEL_LEN="${MAX_MODEL_LEN:-40960}"
 MAX_NUM_SEQS="${MAX_NUM_SEQS:-8}"
 GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.90}"
 KV_CACHE_DTYPE="${KV_CACHE_DTYPE:-auto}"
