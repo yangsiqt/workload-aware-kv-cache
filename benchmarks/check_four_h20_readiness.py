@@ -57,6 +57,18 @@ def inspect() -> dict[str, Any]:
         all(item.prompt_tokens <= 40960 for values in sessions.values() for item in values),
         "max_model_len=40960",
     )
+    model_path = Path("/root/autodl-fs/models/Qwen3-30B-A3B-Instruct-2507")
+    model_files = (
+        [path for path in model_path.iterdir() if path.is_file()]
+        if model_path.is_dir()
+        else []
+    )
+    model_bytes = sum(path.stat().st_size for path in model_files)
+    check(
+        "model_artifacts",
+        len(model_files) == 28 and model_bytes == 61_084_263_662,
+        {"path": str(model_path), "files": len(model_files), "bytes": model_bytes},
+    )
 
     profile_manifest = json.loads(
         (DATA / "profiles" / "manifest.json").read_text(encoding="utf-8")
