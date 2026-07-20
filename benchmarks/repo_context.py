@@ -12,6 +12,46 @@ from typing import Any
 
 _PATCH_PATH = re.compile(r"^\+\+\+ b/(.+)$", re.MULTILINE)
 _ALLOWED_SUFFIXES = {".py", ".md", ".rst", ".toml", ".yaml", ".yml", ".json"}
+_LOW_VALUE_CONTEXT_PARTS = {
+    ".github",
+    "docs",
+    "doc",
+    "examples",
+    "locale",
+    "migrations",
+}
+
+
+def _ordered_context_paths(all_files: list[str], patch: str) -> list[str]:
+    changed = [path for path in _PATCH_PATH.findall(patch) if path in all_files]
+    changed_set = set(changed)
+    parent_dirs = {str(PurePosixPath(path).parent) for path in changed}
+    roots = {
+        PurePosixPath(path).parts[0]
+        for path in changed
+        if PurePosixPath(path).parts
+    }
+    candidates = [
+        path
+        for path in all_files
+        if PurePosixPath(path).suffix.lower() in _ALLOWED_SUFFIXES
+        and (not roots or PurePosixPath(path).parts[0] in roots)
+        and (
+            path in changed_set
+            or not any(part in _LOW_VALUE_CONTEXT_PARTS for part in PurePosixPath(path).parts)
+        )
+    ]
+    same_parent = [
+        path
+        for path in candidates
+        if path not in changed_set and str(PurePosixPath(path).parent) in parent_dirs
+    ]
+    same_root = [
+        path
+        for path in candidates
+        if path not in changed_set and path not in same_parent
+    ]
+    return list(dict.fromkeys(changed + sorted(same_parent) + sorted(same_root)))
 
 
 class GitRepoCache:
@@ -24,14 +64,25 @@ class GitRepoCache:
     def _git_dir(self, repo: str) -> Path:
         return self.root / (repo.replace("/", "__") + ".git")
 
+    def _fetch_url(self, repo: str) -> str:
+        scheme = os.getenv("GITHUB_FETCH_URL_SCHEME", "https").lower()
+        if scheme == "ssh":
+            return f"git@github.com:{repo}.git"
+        if scheme != "https":
+            raise ValueError("GITHUB_FETCH_URL_SCHEME must be https or ssh")
+        return f"https://github.com/{repo}.git"
+
     def _archive_path(self, repo: str, commit: str) -> Path:
         return self.root / "snapshots" / repo.replace("/", "__") / f"{commit}.tar.gz"
 
     def _run(
-        self, args: list[str], *, check: bool = True
+        self, args: list[str], *, check: bool = True, allow_lazy_fetch: bool = False
     ) -> subprocess.CompletedProcess[str]:
         env = os.environ.copy()
-        env["GIT_NO_LAZY_FETCH"] = "1"
+        if allow_lazy_fetch:
+            env.pop("GIT_NO_LAZY_FETCH", None)
+        else:
+            env["GIT_NO_LAZY_FETCH"] = "1"
         if self.ssh_key is not None and self.ssh_key.exists():
             env["GIT_SSH_COMMAND"] = (
                 f"ssh -i {self.ssh_key} -o IdentitiesOnly=yes "
@@ -43,25 +94,37 @@ class GitRepoCache:
 
     def ensure_repo(self, repo: str) -> Path:
         git_dir = self._git_dir(repo)
+        url = self._fetch_url(repo)
         if not git_dir.exists():
-            url = (
-                f"git@github.com:{repo}.git"
-                if self.ssh_key is not None and self.ssh_key.exists()
-                else f"https://github.com/{repo}.git"
-            )
             git_dir.mkdir(parents=True)
             self._run(["git", "init", "--bare", str(git_dir)])
             self._run(["git", f"--git-dir={git_dir}", "remote", "add", "origin", url])
+        else:
+            self._run(["git", f"--git-dir={git_dir}", "remote", "set-url", "origin", url])
         return git_dir
 
     def ensure_commit(self, repo: str, commit: str) -> Path:
         git_dir = self.ensure_repo(repo)
-        exists = self._run(
-            ["git", f"--git-dir={git_dir}", "cat-file", "-e", f"{commit}^{{commit}}"],
-            check=False,
-        )
-        if exists.returncode != 0:
-            self._run(
+        def has_commit() -> bool:
+            return (
+                self._run(
+                    [
+                        "git",
+                        f"--git-dir={git_dir}",
+                        "cat-file",
+                        "-e",
+                        f"{commit}^{{commit}}",
+                    ],
+                    check=False,
+                ).returncode
+                == 0
+            )
+
+        if has_commit():
+            return git_dir
+        last_error = ""
+        for attempt in range(3):
+            result = self._run(
                 [
                     "git",
                     "-c",
@@ -73,9 +136,14 @@ class GitRepoCache:
                     "--no-tags",
                     "origin",
                     commit,
-                ]
+                ],
+                check=False,
             )
-        return git_dir
+            if has_commit():
+                return git_dir
+            last_error = result.stderr.strip()
+            time.sleep(attempt + 1)
+        raise RuntimeError(f"failed to fetch {repo}@{commit}: {last_error}")
 
     def ensure_archive(self, repo: str, commit: str) -> Path:
         archive = self._archive_path(repo, commit)
@@ -194,6 +262,36 @@ class GitRepoCache:
                 )
         return sorted(rows, key=lambda row: (row["repo"], row["commit"]))
 
+    def prefetch_commits(
+        self, snapshots: list[tuple[str, str]], workers: int = 4
+    ) -> list[dict[str, Any]]:
+        """Fetch commit trees without downloading a complete archive per task."""
+        grouped: dict[str, list[str]] = {}
+        for repo, commit in sorted(set(snapshots)):
+            grouped.setdefault(repo, []).append(commit)
+
+        def fetch_repo(item: tuple[str, list[str]]) -> list[dict[str, Any]]:
+            repo, commits = item
+            result = []
+            for commit in commits:
+                git_dir = self.ensure_commit(repo, commit)
+                result.append(
+                    {
+                        "repo": repo,
+                        "commit": commit,
+                        "storage": "partial_git",
+                        "git_dir": str(git_dir),
+                    }
+                )
+            return result
+
+        rows: list[dict[str, Any]] = []
+        with ThreadPoolExecutor(max_workers=min(workers, len(grouped) or 1)) as pool:
+            futures = [pool.submit(fetch_repo, item) for item in grouped.items()]
+            for future in as_completed(futures):
+                rows.extend(future.result())
+        return sorted(rows, key=lambda row: (row["repo"], row["commit"]))
+
     def list_files(self, repo: str, commit: str) -> list[str]:
         git_dir = self.ensure_commit(repo, commit)
         result = self._run(
@@ -204,7 +302,9 @@ class GitRepoCache:
     def read_file(self, repo: str, commit: str, path: str) -> str | None:
         git_dir = self.ensure_commit(repo, commit)
         result = self._run(
-            ["git", f"--git-dir={git_dir}", "show", f"{commit}:{path}"], check=False
+            ["git", f"--git-dir={git_dir}", "show", f"{commit}:{path}"],
+            check=False,
+            allow_lazy_fetch=True,
         )
         if result.returncode != 0 or "\x00" in result.stdout:
             return None
@@ -220,8 +320,11 @@ class GitRepoCache:
         *,
         target_chars: int,
     ) -> str:
+        archive = self._archive_path(repo, commit)
+        if not archive.exists() or not tarfile.is_tarfile(archive):
+            return self._build_context_from_git(repo, commit, patch, target_chars)
+
         git_files = set(self.list_files(repo, commit))
-        archive = self.ensure_archive(repo, commit)
         with tarfile.open(archive, "r:gz") as bundle:
             members: dict[str, tarfile.TarInfo] = {}
             for member in bundle.getmembers():
@@ -232,26 +335,7 @@ class GitRepoCache:
                 if relative in git_files:
                     members[relative] = member
             all_files = sorted(members)
-            changed = [path for path in _PATCH_PATH.findall(patch) if path in members]
-            roots = {
-                PurePosixPath(path).parts[0]
-                for path in changed
-                if PurePosixPath(path).parts
-            }
-            related = [
-                path
-                for path in all_files
-                if PurePosixPath(path).suffix.lower() in _ALLOWED_SUFFIXES
-                and (not roots or PurePosixPath(path).parts[0] in roots)
-            ]
-            remaining = [
-                path
-                for path in all_files
-                if PurePosixPath(path).suffix.lower() in _ALLOWED_SUFFIXES
-                and path not in changed
-                and path not in related
-            ]
-            ordered = list(dict.fromkeys(changed + sorted(related) + sorted(remaining)))
+            ordered = _ordered_context_paths(all_files, patch)
             chunks: list[str] = []
             size = 0
             for path in ordered:
@@ -267,4 +351,22 @@ class GitRepoCache:
                 size += len(chunk)
                 if size >= target_chars:
                     break
+        return "".join(chunks)
+
+    def _build_context_from_git(
+        self, repo: str, commit: str, patch: str, target_chars: int
+    ) -> str:
+        all_files = sorted(self.list_files(repo, commit))
+        ordered = _ordered_context_paths(all_files, patch)
+        chunks: list[str] = []
+        size = 0
+        for path in ordered:
+            content = self.read_file(repo, commit, path)
+            if content is None:
+                continue
+            chunk = f"\n\n### FILE: {path}\n{content}"
+            chunks.append(chunk)
+            size += len(chunk)
+            if size >= target_chars:
+                break
         return "".join(chunks)

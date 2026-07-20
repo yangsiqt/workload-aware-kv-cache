@@ -15,6 +15,7 @@ from benchmarks.io_utils import (
     write_json,
     write_jsonl,
 )
+from benchmarks.profile_utils import profile_instance_ids
 from benchmarks.repo_context import GitRepoCache
 from benchmarks.sampling import stratified_sample
 from benchmarks.schemas import ChatMessage, SourceInfo, WorkloadItem
@@ -52,6 +53,7 @@ AGENT_STAGES = [
 ]
 
 CHECKPOINT = "Checkpoint stored. Continue from the fixed repository context and prior analysis request."
+DEFAULT_EXPECTED_OUTPUT_TOKENS = [128, 128, 128, 128, 128, 512]
 
 
 def _priority(index: int) -> int:
@@ -80,8 +82,12 @@ def _build_swebench(
     tokenizer: Any,
     repo_cache: GitRepoCache,
     preselected: bool = False,
+    expected_output_tokens: list[int] | None = None,
 ) -> Iterator[WorkloadItem]:
     selected = rows if preselected else stratified_sample(rows, count, seed)
+    output_tokens = expected_output_tokens or DEFAULT_EXPECTED_OUTPUT_TOKENS
+    if turns > len(output_tokens):
+        raise ValueError("expected_output_tokens must cover every agent turn")
     for index, row in enumerate(selected):
         instance_id = str(row["instance_id"])
         repo = str(row["repo"])
@@ -121,7 +127,7 @@ def _build_swebench(
                 messages=[ChatMessage(**message) for message in messages],
                 prompt_tokens=prompt_tokens,
                 shared_prefix_tokens=len(prefix_ids),
-                expected_output_tokens=128 if turn_id < 5 else 512,
+                expected_output_tokens=output_tokens[turn_id],
                 source=SourceInfo(
                     dataset="SWE-bench/SWE-bench_Verified",
                     license="SWE-bench terms plus source repository license",
@@ -348,9 +354,7 @@ def generate(
     if "swebench" in selected:
         path = raw_dir / "swebench_verified.jsonl"
         swebench_rows = list(read_jsonl(path))
-        instance_ids = [
-            str(value) for value in profile.get("swebench_instance_ids", [])
-        ]
+        instance_ids = profile_instance_ids(profile, config_path)
         if instance_ids:
             if len(instance_ids) != int(profile["swebench_sessions"]):
                 raise ValueError("swebench_instance_ids must match swebench_sessions")
@@ -387,6 +391,12 @@ def generate(
             tokenizer=tokenizer,
             repo_cache=repo_cache,
             preselected=bool(instance_ids),
+            expected_output_tokens=[
+                int(value)
+                for value in profile.get(
+                    "expected_output_tokens", DEFAULT_EXPECTED_OUTPUT_TOKENS
+                )
+            ],
         )
         materialize("swebench", items)
 

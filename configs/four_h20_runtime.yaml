@@ -1,0 +1,11 @@
+schema_version: "1.0"
+python: "/root/.venvs/kv-worker/bin/python"
+wheel:
+  path: "/root/wheels/workload-aware-kv-cache/mooncake_transfer_engine_cuda13-0.3.11.post1-cp312-cp312-manylinux_2_35_x86_64.whl"
+  sha256: "1f0b62ef625bf017eb4f1717d7240bf72ba22cb9c0abd93fcd28ed53bbb492b9"
+runtime:
+  ld_preload: "/usr/lib/x86_64-linux-gnu/libstdc++.so.6"
+  tokenizer_path: "/root/autodl-fs/models/Qwen3-30B-A3B-Instruct-2507"
+  omp_num_threads: "1"
+  mkl_num_threads: "1"
+  tokenizers_parallelism: "false"

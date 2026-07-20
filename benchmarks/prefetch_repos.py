@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from benchmarks.io_utils import load_yaml, read_jsonl, write_json
+from benchmarks.profile_utils import profile_instance_ids
 from benchmarks.repo_context import GitRepoCache
 from benchmarks.sampling import stratified_sample
 
@@ -28,7 +29,7 @@ def main() -> None:
     profile = config["profiles"][args.profile]
     data_root = Path(config["data_root"])
     rows = list(read_jsonl(data_root / "raw" / "swebench_verified.jsonl"))
-    instance_ids = [str(value) for value in profile.get("swebench_instance_ids", [])]
+    instance_ids = profile_instance_ids(profile, args.config)
     if instance_ids:
         by_id = {str(row["instance_id"]): row for row in rows}
         missing = [
@@ -43,12 +44,19 @@ def main() -> None:
         )
     snapshots = [(str(row["repo"]), str(row["base_commit"])) for row in selected]
     cache = GitRepoCache(data_root / "repo-cache")
-    artifacts = cache.prefetch_archives(snapshots, args.workers)
+    cache_mode = str(profile.get("repo_cache_mode", "archive"))
+    if cache_mode == "archive":
+        artifacts = cache.prefetch_archives(snapshots, args.workers)
+    elif cache_mode == "partial_git":
+        artifacts = cache.prefetch_commits(snapshots, args.workers)
+    else:
+        raise ValueError(f"unknown repo_cache_mode: {cache_mode}")
     manifest = {
         "schema_version": "1.0",
         "created_at": datetime.now(UTC).isoformat(),
         "profile": args.profile,
         "seed": config["seed"],
+        "cache_mode": cache_mode,
         "snapshots": artifacts,
     }
     path = data_root / "manifests" / f"repo-snapshots-{args.profile}.json"
@@ -58,7 +66,7 @@ def main() -> None:
             {
                 "path": str(path),
                 "snapshots": len(artifacts),
-                "bytes": sum(row["bytes"] for row in artifacts),
+                "bytes": sum(int(row.get("bytes", 0)) for row in artifacts),
             },
             indent=2,
         )

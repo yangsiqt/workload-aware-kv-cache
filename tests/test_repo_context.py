@@ -1,7 +1,7 @@
 import io
 import tarfile
 
-from benchmarks.repo_context import GitRepoCache
+from benchmarks.repo_context import GitRepoCache, _ordered_context_paths
 
 
 def add_file(bundle: tarfile.TarFile, name: str, content: bytes) -> None:
@@ -30,3 +30,21 @@ def test_archive_context_prefers_patch_paths_and_skips_binary(tmp_path, monkeypa
     assert "changed = True" in context
     assert "binary.py" not in context
     assert "ignored.bin" not in context
+
+
+def test_partial_context_prioritizes_nearby_source_and_skips_low_value_paths() -> None:
+    files = [
+        "django/conf/locale/en/formats.py",
+        "django/core/cache/base.py",
+        "django/core/cache/backends/base.py",
+        "django/db/migrations/0001_initial.py",
+        "docs/cache.md",
+    ]
+    patch = "+++ b/django/core/cache/base.py\n"
+    ordered = _ordered_context_paths(files, patch)
+    assert ordered[:2] == [
+        "django/core/cache/base.py",
+        "django/core/cache/backends/base.py",
+    ]
+    assert "django/conf/locale/en/formats.py" not in ordered
+    assert "django/db/migrations/0001_initial.py" not in ordered

@@ -1,7 +1,7 @@
 schema_version: "1.0"
 seed: 42
 data_root: "${WORKLOAD_DATA_ROOT:-/root/workload-aware-kv-cache-data}"
-tokenizer_path: "/root/autodl-tmp/models/Qwen3-30B-A3B-Instruct-2507"
+tokenizer_path: "${TOKENIZER_PATH:-/root/autodl-fs/models/Qwen3-30B-A3B-Instruct-2507}"
 profiles:
   small:
     swebench_sessions: 4
@@ -92,6 +92,13 @@ profiles:
     sharegpt_sessions: 50
     controlled_sessions: 30
     turns_per_swebench_session: 6
+    prefix_tiers: [8192, 16384, 32768]
+  four_h20:
+    swebench_sessions: 200
+    swebench_instance_manifest: "four_h20_sessions.json"
+    repo_cache_mode: "partial_git"
+    turns_per_swebench_session: 6
+    expected_output_tokens: [128, 128, 256, 256, 512, 512]
     prefix_tiers: [8192, 16384, 32768]
   full:
     swebench_sessions: 100
