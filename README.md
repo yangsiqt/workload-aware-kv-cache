@@ -111,6 +111,34 @@ watermarked comparison, and verifies that no Router or Mock process remains.
 
 Do not install `/root/vllm` in editable mode during baseline collection.
 
+## Four-H20 Adaptive KV and PD Windows
+
+The four-GPU stage uses a frozen 1200-request SWE-bench-derived workload and
+separate, resumable Adaptive KV and Hybrid PD windows. Pre-rental validation is:
+
+```bash
+./scripts/check_four_h20_readiness.sh
+```
+
+On the 4 x H20 host, start with the mandatory runtime smoke in each window:
+
+```bash
+./scripts/run_four_h20_kv_window.sh
+./scripts/run_four_h20_pd_window.sh
+```
+
+Both entrypoints support `--dry-run`, `--from K03/P02`, and `--resume`. The KV
+window compares the best measured fixed LMCache retrieval threshold with the
+adaptive Local HBM/L1/L2/Recompute selector. The PD window compares a measured
+fixed prompt-length rule with Adaptive Monolithic/PD selection in the same
+2M+1P1D layout. Formal Before/After runs share one frozen arrival-trace SHA and
+report p50/p90/p95/p99, SLO goodput, path distributions, connector results,
+fallbacks, prediction error, and Router decision overhead.
+
+`READY FOR 4xH20` means all pre-rental artifacts pass. It does not replace K01
+or P01: LMCache, Mooncake Store, and MooncakeConnector must still pass a real
+four-H20 runtime smoke before formal results are collected.
+
 ## Workload Profiles
 
 The pinned `pre_rental` screening profile contains 330 requests across 105

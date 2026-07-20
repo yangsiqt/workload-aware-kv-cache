@@ -5,6 +5,7 @@ ROUTER_BIN="${ROUTER_BIN:-/root/.venvs/vllm-router/bin/vllm-router}"
 PORT="${PORT:-9003}"
 BACKENDS="${BACKENDS:-http://127.0.0.1:9101,http://127.0.0.1:9102}"
 MODEL="${MODEL:-Qwen3-30B-A3B-Instruct-2507}"
+STATIC_MODEL_LABELS="${STATIC_MODEL_LABELS:-}"
 POLICY="${POLICY:-agent_slo_aware}"
 SESSION_KEY="${SESSION_KEY:-X-Session-ID}"
 PREFIX_MIN_MATCH_LENGTH="${PREFIX_MIN_MATCH_LENGTH:-128}"
@@ -35,6 +36,9 @@ args=(
   --engine-stats-interval 0.25
   --max-instance-failover-reroute-attempts 1
 )
+if [[ -n "$STATIC_MODEL_LABELS" ]]; then
+  args+=(--static-model-labels "$STATIC_MODEL_LABELS")
+fi
 if [[ "$POLICY" == "agent_slo_aware" ]]; then
   args+=(
     --agent-slo-config "$POLICY_CONFIG"

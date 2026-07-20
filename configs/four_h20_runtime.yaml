@@ -1,8 +1,14 @@
 schema_version: "1.0"
 python: "/root/.venvs/kv-worker/bin/python"
-wheel:
+mooncake_wheel:
   path: "/root/wheels/workload-aware-kv-cache/mooncake_transfer_engine_cuda13-0.3.11.post1-cp312-cp312-manylinux_2_35_x86_64.whl"
   sha256: "1f0b62ef625bf017eb4f1717d7240bf72ba22cb9c0abd93fcd28ed53bbb492b9"
+lmcache_base_wheel:
+  path: "/root/wheels/workload-aware-kv-cache/lmcache-0.5.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
+  sha256: "fa2fb1c3160f4b6542b0ff5cbd78632b3fa36b326a561162cd959523ea552540"
+lmcache_patched_wheel:
+  path: "/root/wheels/workload-aware-kv-cache/patched/lmcache-0.5.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
+  sha256: "55a0acb0b7336cf5828924ed724f9711d16723c605993c4d015d20251ff7c1b3"
 runtime:
   ld_preload: "/usr/lib/x86_64-linux-gnu/libstdc++.so.6"
   tokenizer_path: "/root/autodl-fs/models/Qwen3-30B-A3B-Instruct-2507"

@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+DRY_RUN=0
+if [[ "${1:-}" == "--dry-run" ]]; then
+  DRY_RUN=1
+  shift
+fi
+if [[ $# -lt 6 || $# -gt 7 ]]; then
+  echo "usage: $0 [--dry-run] RUN_ID TOPOLOGY ROUTER_CONFIG WORKLOAD MODE CONCURRENCY [ARRIVAL_TRACE]" >&2
+  exit 2
+fi
+
+RUN_ID="$1"
+TOPOLOGY="$2"
+ROUTER_CONFIG="$3"
+WORKLOAD="$4"
+MODE="$5"
+CONCURRENCY="$6"
+ARRIVAL_TRACE="${7:-}"
+PROJECT_ROOT="${PROJECT_ROOT:-/root/workload-aware-kv-cache}"
+export PYTHONPATH="$PROJECT_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+RUN_ROOT="${RUN_ROOT:-/root/workload-aware-kv-cache-data/runs/four_h20}"
+LOG_ROOT="${FOUR_H20_LOG_ROOT:-/root/log/workload-aware-kv-cache/four-h20}"
+STACK="$PROJECT_ROOT/scripts/four_h20_stack.sh"
+TRACE="$LOG_ROOT/routing/$RUN_ID.trace.jsonl"
+METRICS="$LOG_ROOT/benchmark/$RUN_ID.metrics.jsonl"
+metrics_pid=""
+
+print_command() {
+  printf 'DRY-RUN:'
+  printf ' %q' "$@"
+  printf '\n'
+}
+
+cleanup() {
+  if [[ -n "$metrics_pid" ]] && kill -0 "$metrics_pid" 2>/dev/null; then
+    kill -TERM "$metrics_pid" 2>/dev/null || true
+    wait "$metrics_pid" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT INT TERM
+
+benchmark=(
+  python -m benchmarks.run_benchmark "$WORKLOAD"
+  --config "$PROJECT_ROOT/configs/benchmark-four-h20-router.yaml"
+  --output-root "$RUN_ROOT"
+  --mode "$MODE"
+  --concurrency "$CONCURRENCY"
+  --route-policy agent_slo_aware
+  --run-id "$RUN_ID"
+  --router-config "$ROUTER_CONFIG"
+  --launch-command "$0 $*"
+)
+if [[ -n "$ARRIVAL_TRACE" ]]; then
+  benchmark+=(--arrival-trace "$ARRIVAL_TRACE")
+fi
+
+if [[ "$DRY_RUN" == "1" ]]; then
+  FOUR_H20_ROUTER_TRACE="$TRACE" "$STACK" --dry-run router "$ROUTER_CONFIG" "$TOPOLOGY"
+  "$STACK" --dry-run reset
+  print_command python -m benchmarks.sample_backend_metrics --output "$METRICS" --interval 0.25 \
+    --backend gpu0=http://127.0.0.1:8000 --backend gpu1=http://127.0.0.1:8001 \
+    --backend gpu2=http://127.0.0.1:8002 --backend gpu3=http://127.0.0.1:8003
+  print_command "${benchmark[@]}"
+  print_command python -m benchmarks.join_traces "$RUN_ROOT/$RUN_ID/requests.jsonl" "$TRACE" "$RUN_ROOT/$RUN_ID/joined_trace.jsonl"
+  exit 0
+fi
+
+mkdir -p "$RUN_ROOT" "$LOG_ROOT/routing" "$LOG_ROOT/benchmark"
+if [[ -d "$RUN_ROOT/$RUN_ID" ]]; then
+  mv "$RUN_ROOT/$RUN_ID" "$RUN_ROOT/$RUN_ID.incomplete.$(date -u +%Y%m%dT%H%M%SZ)"
+fi
+rm -f "$TRACE" "$METRICS"
+FOUR_H20_ROUTER_TRACE="$TRACE" "$STACK" router "$ROUTER_CONFIG" "$TOPOLOGY"
+"$STACK" reset
+
+python -m benchmarks.sample_backend_metrics \
+  --backend gpu0=http://127.0.0.1:8000 \
+  --backend gpu1=http://127.0.0.1:8001 \
+  --backend gpu2=http://127.0.0.1:8002 \
+  --backend gpu3=http://127.0.0.1:8003 \
+  --output "$METRICS" --interval 0.25 &
+metrics_pid=$!
+
+(cd "$PROJECT_ROOT" && "${benchmark[@]}")
+cleanup
+metrics_pid=""
+cp "$TRACE" "$RUN_ROOT/$RUN_ID/router_trace.jsonl"
+cp "$METRICS" "$RUN_ROOT/$RUN_ID/backend_metrics.jsonl"
+sleep 1
+for gpu in 0 1 2 3; do
+  connector_trace="$LOG_ROOT/serving/backend-$gpu.connector-trace.jsonl"
+  if [[ -f "$connector_trace" ]]; then
+    cp "$connector_trace" "$RUN_ROOT/$RUN_ID/connector_trace_gpu$gpu.jsonl"
+  fi
+done
+for _ in $(seq 1 40); do
+  if python -m benchmarks.join_traces \
+    "$RUN_ROOT/$RUN_ID/requests.jsonl" "$TRACE" \
+    "$RUN_ROOT/$RUN_ID/joined_trace.jsonl" >/dev/null 2>&1; then
+    echo "$RUN_ROOT/$RUN_ID"
+    exit 0
+  fi
+  sleep 0.25
+done
+python -m benchmarks.join_traces \
+  "$RUN_ROOT/$RUN_ID/requests.jsonl" "$TRACE" \
+  "$RUN_ROOT/$RUN_ID/joined_trace.jsonl"

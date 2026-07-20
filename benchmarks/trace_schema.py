@@ -39,7 +39,7 @@ class CandidateTrace(BaseModel):
 class RouteTraceEvent(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    schema_version: Literal["1.0", "1.1"] = "1.1"
+    schema_version: Literal["1.0", "1.1", "1.2"] = "1.2"
     event: Literal["decision", "completion"]
     request_id: str
     attempt_id: int = Field(default=0, ge=0)
@@ -49,6 +49,8 @@ class RouteTraceEvent(BaseModel):
     reason: str
     metadata: RouteMetadata
     candidates: list[CandidateTrace]
+    kv_path: dict[str, Any] | None = None
+    execution_mode: dict[str, Any] | None = None
     decided_at: float
     success: bool | None = None
     error: str = ""

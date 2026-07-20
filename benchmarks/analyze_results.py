@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+from collections import Counter
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -10,6 +12,8 @@ from benchmarks.io_utils import read_jsonl
 
 
 LATENCY_COLUMNS = ["ttft_ms", "e2e_ms", "tpot_ms"]
+PERCENTILES = (("p50", 0.50), ("p90", 0.90), ("p95", 0.95), ("p99", 0.99))
+DEFAULT_TTFT_SLO_MS = {0: 1000.0, 1: 2500.0, 2: 5000.0}
 
 
 def _percentile(series: pd.Series, q: float) -> float | None:
@@ -17,7 +21,12 @@ def _percentile(series: pd.Series, q: float) -> float | None:
     return float(clean.quantile(q)) if not clean.empty else None
 
 
-def summarize(results_path: Path, output_dir: Path, simulated: bool = False) -> pd.DataFrame:
+def summarize(
+    results_path: Path,
+    output_dir: Path,
+    simulated: bool = False,
+    ttft_slo_ms: dict[int, float] | None = None,
+) -> pd.DataFrame:
     rows = read_jsonl(results_path)
     frame = pd.DataFrame(rows)
     if frame.empty:
@@ -34,15 +43,32 @@ def summarize(results_path: Path, output_dir: Path, simulated: bool = False) -> 
         "cache_hit_rate": None,
         "simulated": simulated,
     }
+    slo_targets = ttft_slo_ms or DEFAULT_TTFT_SLO_MS
+    slo_met = successful.apply(
+        lambda row: row.get("ttft_ms") is not None
+        and float(row["ttft_ms"]) <= slo_targets.get(int(row["priority"]), 2500.0),
+        axis=1,
+    )
+    summary["slo_met_requests"] = int(slo_met.sum())
+    summary["slo_goodput_request_per_s"] = float(slo_met.sum() / elapsed)
+    summary["slo_violation_rate"] = float(1.0 - slo_met.sum() / len(frame))
+    for field in ("selected_kv_path", "selected_execution_mode"):
+        values = Counter(str(value) for value in successful.get(field, pd.Series(dtype=str)).dropna())
+        summary[f"{field}_distribution"] = json.dumps(dict(sorted(values.items())))
     cache = frame["cache_hit"].dropna() if "cache_hit" in frame else pd.Series(dtype=bool)
     if not cache.empty:
         summary["cache_hit_rate"] = float(cache.astype(bool).mean())
     for column in LATENCY_COLUMNS:
-        for name, quantile in (("p50", 0.50), ("p90", 0.90), ("p99", 0.99)):
+        for name, quantile in PERCENTILES:
             summary[f"{column}_{name}"] = _percentile(successful[column], quantile)
+    router_decision = successful.get("router_decision_ms", pd.Series(dtype=float))
+    for name, quantile in PERCENTILES:
+        summary[f"router_decision_ms_{name}"] = _percentile(
+            router_decision, quantile
+        )
     itl = [value for values in successful["inter_chunk_latencies_ms"] for value in values]
     itl_series = pd.Series(itl, dtype=float)
-    for name, quantile in (("p50", 0.50), ("p90", 0.90), ("p99", 0.99)):
+    for name, quantile in PERCENTILES:
         summary[f"itl_ms_{name}"] = _percentile(itl_series, quantile)
 
     output_dir.mkdir(parents=True, exist_ok=True)

@@ -16,6 +16,7 @@ from benchmarks.schemas import (
     SourceInfo,
     WorkloadItem,
 )
+from benchmarks.trace_schema import RouteTraceEvent
 from benchmarks.validate_trace import validate
 
 
@@ -89,6 +90,22 @@ def route_event(request_id: str, event: str, success=None, attempt_id: int = 0) 
         "success": success,
         "error": "",
     }
+
+
+def test_trace_schema_accepts_adaptive_kv_pd_v12() -> None:
+    row = route_event("request", "decision")
+    row["schema_version"] = "1.2"
+    row["kv_path"] = {
+        "selected_path": "mooncake_l2",
+        "retrieve_mode": "force",
+    }
+    row["execution_mode"] = {"selected_mode": "pd"}
+
+    event = RouteTraceEvent.model_validate(row)
+
+    assert event.schema_version == "1.2"
+    assert event.kv_path["selected_path"] == "mooncake_l2"
+    assert event.execution_mode["selected_mode"] == "pd"
 
 
 def test_arrival_traces_are_reproducible_and_cover_workload(tmp_path: Path) -> None:

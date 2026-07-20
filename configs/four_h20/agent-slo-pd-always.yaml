@@ -1,0 +1,9 @@
+policy_level: P-R3
+prefill_tokens_per_s: 7800.0
+external_enabled: false
+kv_policy: disabled
+pd_enabled: true
+pd_policy: fixed
+pd_fixed_min_prompt_tokens: 0
+pd_prefill_labels: [prefill]
+pd_decode_labels: [decode]

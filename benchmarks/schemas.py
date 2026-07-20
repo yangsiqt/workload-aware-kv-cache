@@ -60,6 +60,11 @@ class RequestResult(BaseModel):
     route_policy: str
     backend_id: str | None = None
     route_reason: str | None = None
+    selected_kv_path: str | None = None
+    selected_execution_mode: str | None = None
+    prefill_backend_id: str | None = None
+    decode_backend_id: str | None = None
+    router_decision_ms: float | None = None
     cache_hit: bool | None = None
     offered_at_s: float | None = None
     started_at_s: float

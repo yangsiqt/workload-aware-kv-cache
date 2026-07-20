@@ -133,6 +133,7 @@ async def _request(
         tpot = max(0.0, (e2e - ttft) / (output_tokens - 1))
     itl = [(right - left) * 1000 for left, right in zip(chunk_times, chunk_times[1:])]
     hit_header = response_headers.get("x-mock-cache-hit")
+    router_decision_header = response_headers.get("x-router-decision-ms")
     return RequestResult(
         run_id=run_id,
         request_id=item.request_id,
@@ -145,6 +146,15 @@ async def _request(
         route_policy=response_headers.get("x-route-policy", route_policy),
         backend_id=response_headers.get("x-backend-id"),
         route_reason=response_headers.get("x-route-reason"),
+        selected_kv_path=response_headers.get("x-kv-path"),
+        selected_execution_mode=response_headers.get("x-execution-mode"),
+        prefill_backend_id=response_headers.get("x-prefill-backend-id"),
+        decode_backend_id=response_headers.get("x-decode-backend-id"),
+        router_decision_ms=(
+            float(router_decision_header)
+            if router_decision_header is not None
+            else None
+        ),
         cache_hit=None if hit_header is None else hit_header.lower() == "true",
         offered_at_s=offered_at,
         started_at_s=wall_started,
