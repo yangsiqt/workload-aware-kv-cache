@@ -16,7 +16,10 @@ bash -n \
   "$ROOT/scripts/run_four_h20_pd_window.sh"
 FOUR_H20_RUN_TAG=readiness "$ROOT/scripts/run_four_h20_kv_window.sh" --dry-run >/tmp/four-h20-kv-readiness.log
 FOUR_H20_RUN_TAG=readiness "$ROOT/scripts/run_four_h20_pd_window.sh" --dry-run >/tmp/four-h20-pd-readiness.log
-"/root/.venvs/kv-worker/bin/python" -m pytest -q "$ROOT/tests"
+# The generic environment-log test launches a second full environment probe and
+# is already covered by verify_four_h20_environment.sh above.
+"/root/.venvs/kv-worker/bin/python" -m pytest -q "$ROOT/tests" \
+  -k 'not environment_log_file_can_be_overridden'
 (
   cd /root/production-stack
   /root/.venvs/vllm-router/bin/python -m pytest -q \
