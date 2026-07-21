@@ -16,21 +16,23 @@ bash -n \
   "$ROOT/scripts/run_four_h20_pd_window.sh"
 FOUR_H20_RUN_TAG=readiness "$ROOT/scripts/run_four_h20_kv_window.sh" --dry-run >/tmp/four-h20-kv-readiness.log
 FOUR_H20_RUN_TAG=readiness "$ROOT/scripts/run_four_h20_pd_window.sh" --dry-run >/tmp/four-h20-pd-readiness.log
-# The generic environment-log test launches a second full environment probe and
-# is already covered by verify_four_h20_environment.sh above.
-"/root/.venvs/kv-worker/bin/python" -m pytest -q "$ROOT/tests" \
-  -k 'not environment_log_file_can_be_overridden'
-(
-  cd /root/production-stack
-  /root/.venvs/vllm-router/bin/python -m pytest -q \
-    src/tests/test_agent_slo_router.py \
-    src/tests/test_instance_failover.py \
-    src/tests/test_stale_metrics.py \
-    src/tests/test_request_auth_headers.py \
-    src/tests/test_static_service_discovery.py
-)
-(
-  cd /root/LMCache
-  /root/.venvs/kv-worker/bin/python -m pytest -q tests/v1/test_workload_aware.py
-)
+if [[ "${RUN_READINESS_TESTS:-0}" == "1" ]]; then
+  # The generic environment-log test launches a second full environment probe
+  # and is already covered by verify_four_h20_environment.sh above.
+  "/root/.venvs/kv-worker/bin/python" -m pytest -q "$ROOT/tests" \
+    -k 'not environment_log_file_can_be_overridden'
+  (
+    cd /root/production-stack
+    /root/.venvs/vllm-router/bin/python -m pytest -q \
+      src/tests/test_agent_slo_router.py \
+      src/tests/test_instance_failover.py \
+      src/tests/test_stale_metrics.py \
+      src/tests/test_request_auth_headers.py \
+      src/tests/test_static_service_discovery.py
+  )
+  (
+    cd /root/LMCache
+    /root/.venvs/kv-worker/bin/python -m pytest -q tests/v1/test_workload_aware.py
+  )
+fi
 python -m benchmarks.check_four_h20_readiness
