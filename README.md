@@ -127,13 +127,21 @@ On the 4 x H20 host, start with the mandatory runtime smoke in each window:
 ./scripts/run_four_h20_pd_window.sh
 ```
 
-Both entrypoints support `--dry-run`, `--from K03/P02`, and `--resume`. The KV
+Both entrypoints support `--dry-run`, `--from K03/P02`, `--resume`, and an
+explicit `--run-tag`. Failure injection is skipped by default and can be enabled
+with `--include-failure`. The KV
 window compares the best measured fixed LMCache retrieval threshold with the
 adaptive Local HBM/L1/L2/Recompute selector. The PD window compares a measured
 fixed prompt-length rule with Adaptive Monolithic/PD selection in the same
 2M+1P1D layout. Formal Before/After runs share one frozen arrival-trace SHA and
 report p50/p90/p95/p99, SLO goodput, path distributions, connector results,
 fallbacks, prediction error, and Router decision overhead.
+
+K02 records worker-observed LocalCPU/Mooncake retrieval locations and fits
+Prefill/L1/L2 costs into a frozen Adaptive KV config. P02 similarly fits the
+Prefill, PD transfer, and decode costs. Every stage gates request count, success
+rate, Trace completeness, and required execution-path evidence before it can be
+marked complete.
 
 `READY FOR 4xH20` means all pre-rental artifacts pass. It does not replace K01
 or P01: LMCache, Mooncake Store, and MooncakeConnector must still pass a real

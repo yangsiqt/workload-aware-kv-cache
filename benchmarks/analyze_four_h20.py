@@ -31,8 +31,8 @@ def _trace_metrics(path: Path) -> dict[str, Any]:
             "joined_trace_rows": 0,
             "retry_requests": 0,
             "fallback_requests": 0,
-            "prediction_absolute_error_ms_p50": None,
-            "prediction_absolute_error_ms_p90": None,
+            "prediction_e2e_absolute_error_ms_p50": None,
+            "prediction_e2e_absolute_error_ms_p90": None,
         }
     errors: list[float] = []
     retries = 0
@@ -48,7 +48,7 @@ def _trace_metrics(path: Path) -> dict[str, Any]:
             for item in attempts
         )
         client = row.get("client", {})
-        actual = client.get("ttft_ms")
+        actual = client.get("e2e_ms")
         backend = route.get("backend_url")
         candidate = next(
             (
@@ -59,7 +59,10 @@ def _trace_metrics(path: Path) -> dict[str, Any]:
             None,
         )
         if actual is not None and candidate and candidate.get("total_ms") is not None:
-            errors.append(abs(float(actual) - float(candidate["total_ms"])))
+            predicted = float(candidate["total_ms"]) - float(
+                candidate.get("slo_penalty_ms", 0.0)
+            )
+            errors.append(abs(float(actual) - predicted))
 
     def percentile(values: list[float], q: float) -> float | None:
         if not values:
@@ -75,8 +78,8 @@ def _trace_metrics(path: Path) -> dict[str, Any]:
         "joined_trace_rows": len(rows),
         "retry_requests": retries,
         "fallback_requests": fallbacks,
-        "prediction_absolute_error_ms_p50": percentile(errors, 0.50),
-        "prediction_absolute_error_ms_p90": percentile(errors, 0.90),
+        "prediction_e2e_absolute_error_ms_p50": percentile(errors, 0.50),
+        "prediction_e2e_absolute_error_ms_p90": percentile(errors, 0.90),
     }
 
 
@@ -100,9 +103,16 @@ def load_run(label: str, run_dir: Path) -> dict[str, Any]:
         for row in read_jsonl(path)
         if str(row.get("request_id", "")) in request_ids
     ]
+    actual_rows = [
+        row
+        for path in sorted(run_dir.glob("connector_actual_trace_gpu*.jsonl"))
+        for row in read_jsonl(path)
+        if row.get("event_type") == "actual_retrieve"
+        and str(row.get("request_id", "")) in request_ids
+    ]
     actual_paths = Counter(
         str(row["actual_kv_path"])
-        for row in connector_rows
+        for row in actual_rows
         if row.get("actual_kv_path")
     )
     connector_fallbacks = sum(bool(row.get("fallback_reason")) for row in connector_rows)
@@ -121,6 +131,7 @@ def load_run(label: str, run_dir: Path) -> dict[str, Any]:
         "execution_mode_distribution": dict(sorted(modes.items())),
         "connector_actual_kv_path_distribution": dict(sorted(actual_paths.items())),
         "connector_result_rows": len(connector_rows),
+        "connector_actual_retrieve_rows": len(actual_rows),
         "connector_fallback_rows": connector_fallbacks,
         "workload_sha256": manifest["workload_sha256"],
         "arrival_trace_sha256": manifest.get("arrival_trace_sha256"),
@@ -152,6 +163,14 @@ def analyze(specs: list[str], output_dir: Path, title: str) -> list[dict[str, An
         rows.append(load_run(label, Path(raw_path)))
     if not rows:
         raise ValueError("at least one run is required")
+    if any(row["successful_requests"] / row["requests"] < 0.99 for row in rows):
+        raise ValueError("all formal runs must reach at least 99% success")
+    workload_hashes = {row["workload_sha256"] for row in rows}
+    trace_hashes = {row["arrival_trace_sha256"] for row in rows}
+    if len(rows) > 1 and len(workload_hashes) != 1:
+        raise ValueError("Before/After workload SHA256 values differ")
+    if len(rows) > 1 and (None in trace_hashes or len(trace_hashes) != 1):
+        raise ValueError("Before/After arrival Trace SHA256 values differ")
     output_dir.mkdir(parents=True, exist_ok=True)
     write_json(output_dir / "four_h20_summary.json", {"title": title, "runs": rows})
     with (output_dir / "four_h20_summary.csv").open(

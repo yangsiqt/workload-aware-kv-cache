@@ -135,10 +135,14 @@ start_kv() {
   check_preflight
   if [[ "$DRY_RUN" == "0" ]]; then
     for gpu in 0 1 2 3; do
-      local trace="$LOG_ROOT/serving/backend-$gpu.connector-trace.jsonl"
-      if [[ -f "$trace" ]]; then
-        mv "$trace" "$trace.previous.$(date -u +%Y%m%dT%H%M%SZ)"
-      fi
+      local trace actual_trace
+      trace="$LOG_ROOT/serving/backend-$gpu.connector-trace.jsonl"
+      actual_trace="$LOG_ROOT/serving/backend-$gpu.connector-actual-trace.jsonl"
+      for candidate in "$trace" "$actual_trace"; do
+        if [[ -f "$candidate" ]]; then
+          mv "$candidate" "$candidate.previous.$(date -u +%Y%m%dT%H%M%SZ)"
+        fi
+      done
     done
   fi
   start_mooncake_and_controller
@@ -148,6 +152,7 @@ start_kv() {
       "CUDA_VISIBLE_DEVICES=$gpu" \
       "LMCACHE_CONFIG_FILE=$PROJECT_ROOT/configs/four_h20/lmcache-backend-$gpu.yaml" \
       "LMCACHE_WORKLOAD_AWARE_TRACE_PATH=$LOG_ROOT/serving/backend-$gpu.connector-trace.jsonl" \
+      "LMCACHE_WORKLOAD_AWARE_ACTUAL_TRACE_PATH=$LOG_ROOT/serving/backend-$gpu.connector-actual-trace.jsonl" \
       VLLM_SERVER_DEV_MODE=1 \
       PYTHONHASHSEED=123 \
       "${vllm_base[@]}" --port "$port" \
@@ -167,11 +172,11 @@ start_pd() {
   done
   start_process backend-2 env CUDA_VISIBLE_DEVICES=2 VLLM_SERVER_DEV_MODE=1 VLLM_MOONCAKE_BOOTSTRAP_PORT=8998 \
     "${vllm_base[@]}" --port 8002 \
-    --kv-transfer-config '{"kv_connector":"MooncakeConnector","kv_role":"kv_producer"}'
+    --kv-transfer-config '{"kv_connector":"MooncakeConnector","kv_role":"kv_producer","kv_connector_extra_config":{"mooncake_protocol":"tcp"}}'
   wait_http backend-2 http://127.0.0.1:8002/v1/models
   start_process backend-3 env CUDA_VISIBLE_DEVICES=3 VLLM_SERVER_DEV_MODE=1 \
     "${vllm_base[@]}" --port 8003 \
-    --kv-transfer-config '{"kv_connector":"MooncakeConnector","kv_role":"kv_consumer"}'
+    --kv-transfer-config '{"kv_connector":"MooncakeConnector","kv_role":"kv_consumer","kv_connector_extra_config":{"mooncake_protocol":"tcp"}}'
   wait_http backend-3 http://127.0.0.1:8003/v1/models
   start_router "$PROJECT_ROOT/configs/four_h20/agent-slo-pd-adaptive.yaml" pd
 }

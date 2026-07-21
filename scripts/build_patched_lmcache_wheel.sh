@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASE_WHEEL="${BASE_LMCACHE_WHEEL:-/root/wheels/workload-aware-kv-cache/lmcache-0.5.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl}"
 LMCACHE_SOURCE="${LMCACHE_SOURCE:-/root/LMCache}"
 OUTPUT_DIR="${PATCHED_WHEEL_DIR:-/root/wheels/workload-aware-kv-cache/patched}"
@@ -16,6 +17,7 @@ trap cleanup EXIT
 test -f "$BASE_WHEEL"
 test -f "$LMCACHE_SOURCE/lmcache/integration/vllm/workload_aware.py"
 test -f "$LMCACHE_SOURCE/lmcache/integration/vllm/vllm_v1_adapter.py"
+test -f "$PROJECT_ROOT/patches/lmcache-0.5.1-cache-engine-actual-trace.patch"
 mkdir -p "$OUTPUT_DIR"
 
 "$PYTHON_BIN" -m wheel unpack "$BASE_WHEEL" --dest "$BUILD_DIR"
@@ -32,6 +34,8 @@ install -m 0644 \
 install -m 0644 \
   "$LMCACHE_SOURCE/lmcache/integration/vllm/vllm_v1_adapter.py" \
   "$package_root/lmcache/integration/vllm/vllm_v1_adapter.py"
+patch --batch --forward -d "$package_root" -p1 \
+  <"$PROJECT_ROOT/patches/lmcache-0.5.1-cache-engine-actual-trace.patch"
 find "$package_root" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
 
 rm -f "$OUTPUT_DIR"/lmcache-0.5.1-*.whl

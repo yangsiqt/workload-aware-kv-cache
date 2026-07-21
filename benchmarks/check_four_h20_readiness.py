@@ -131,7 +131,7 @@ def inspect() -> dict[str, Any]:
         "/root/wheels/workload-aware-kv-cache/patched/"
         "lmcache-0.5.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
     )
-    expected_patched_sha = "55a0acb0b7336cf5828924ed724f9711d16723c605993c4d015d20251ff7c1b3"
+    expected_patched_sha = "fb02dfc85bf3597b49333e30b7787765c152f81519383c414c24c7b26fb76e5c"
     check(
         "patched_lmcache_wheel",
         patched.exists() and sha256_file(patched) == expected_patched_sha,
@@ -165,6 +165,24 @@ def inspect() -> dict[str, Any]:
         "orchestration_entrypoints",
         all(path.exists() and os.access(path, os.X_OK) for path in scripts),
         [str(path) for path in scripts],
+    )
+    support_modules = [
+        ROOT / "benchmarks" / "fit_four_h20_costs.py",
+        ROOT / "benchmarks" / "validate_four_h20_run.py",
+        ROOT / "patches" / "lmcache-0.5.1-cache-engine-actual-trace.patch",
+    ]
+    check(
+        "measured_cost_and_runtime_gates",
+        all(path.is_file() for path in support_modules),
+        [str(path) for path in support_modules],
+    )
+    stack_source = (ROOT / "scripts" / "four_h20_stack.sh").read_text(
+        encoding="utf-8"
+    )
+    check(
+        "pd_mooncake_tcp",
+        stack_source.count('"mooncake_protocol":"tcp"') == 2,
+        "producer and consumer explicitly use TCP",
     )
 
     repositories = {
