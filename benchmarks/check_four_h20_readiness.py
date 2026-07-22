@@ -131,7 +131,7 @@ def inspect() -> dict[str, Any]:
         "/root/wheels/workload-aware-kv-cache/patched/"
         "lmcache-0.5.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
     )
-    expected_patched_sha = "fb02dfc85bf3597b49333e30b7787765c152f81519383c414c24c7b26fb76e5c"
+    expected_patched_sha = "d16ee84efb7d1dd473b4e82c435beef52c45178b0801a02167dacb8d4f88975c"
     check(
         "patched_lmcache_wheel",
         patched.exists() and sha256_file(patched) == expected_patched_sha,

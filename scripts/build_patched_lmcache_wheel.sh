@@ -17,6 +17,8 @@ trap cleanup EXIT
 test -f "$BASE_WHEEL"
 test -f "$LMCACHE_SOURCE/lmcache/integration/vllm/workload_aware.py"
 test -f "$LMCACHE_SOURCE/lmcache/integration/vllm/vllm_v1_adapter.py"
+test -f "$LMCACHE_SOURCE/lmcache/v1/storage_backend/__init__.py"
+test -f "$LMCACHE_SOURCE/lmcache/v1/storage_backend/remote_backend.py"
 test -f "$PROJECT_ROOT/patches/lmcache-0.5.1-cache-engine-actual-trace.patch"
 mkdir -p "$OUTPUT_DIR"
 
@@ -34,6 +36,12 @@ install -m 0644 \
 install -m 0644 \
   "$LMCACHE_SOURCE/lmcache/integration/vllm/vllm_v1_adapter.py" \
   "$package_root/lmcache/integration/vllm/vllm_v1_adapter.py"
+install -m 0644 \
+  "$LMCACHE_SOURCE/lmcache/v1/storage_backend/__init__.py" \
+  "$package_root/lmcache/v1/storage_backend/__init__.py"
+install -m 0644 \
+  "$LMCACHE_SOURCE/lmcache/v1/storage_backend/remote_backend.py" \
+  "$package_root/lmcache/v1/storage_backend/remote_backend.py"
 patch --batch --forward -d "$package_root" -p1 \
   <"$PROJECT_ROOT/patches/lmcache-0.5.1-cache-engine-actual-trace.patch"
 find "$package_root" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
