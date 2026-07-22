@@ -6,6 +6,7 @@ MODEL_PATH="${MODEL_PATH:-/root/autodl-fs/models/Qwen3-30B-A3B-Instruct-2507}"
 MODEL_NAME="${MODEL_NAME:-Qwen3-30B-A3B-Instruct-2507}"
 PYTHON_BIN="${KV_WORKER_PYTHON:-/root/.venvs/kv-worker/bin/python}"
 ROUTER_BIN="${ROUTER_BIN:-/root/.venvs/vllm-router/bin/vllm-router}"
+MOONCAKE_MASTER_BIN="${MOONCAKE_MASTER_BIN:-/root/.venvs/kv-worker/lib/python3.12/site-packages/mooncake/mooncake_master}"
 LOG_ROOT="${FOUR_H20_LOG_ROOT:-/root/log/workload-aware-kv-cache/four-h20}"
 PID_DIR="$LOG_ROOT/pids"
 START_TIMEOUT="${FOUR_H20_START_TIMEOUT:-720}"
@@ -99,7 +100,7 @@ check_preflight() {
   test -x "$PYTHON_BIN"
   test -x "$ROUTER_BIN"
   test -x /root/.venvs/kv-worker/bin/lmcache_controller
-  test -x /root/.venvs/kv-worker/bin/mooncake_master
+  test -x "$MOONCAKE_MASTER_BIN"
   test -x /root/.venvs/kv-worker/bin/mooncake_http_metadata_server
   "$PROJECT_ROOT/scripts/verify_four_h20_environment.sh"
   if [[ "$DRY_RUN" == "0" ]]; then
@@ -111,7 +112,7 @@ check_preflight() {
 }
 
 start_mooncake_and_controller() {
-  start_process mooncake-master /root/.venvs/kv-worker/bin/mooncake_master -v=1 \
+  start_process mooncake-master "$MOONCAKE_MASTER_BIN" -v=1 \
     --metrics_port="$MOONCAKE_MASTER_METRICS_PORT"
   start_process mooncake-metadata /root/.venvs/kv-worker/bin/mooncake_http_metadata_server --port 8005
   start_process lmcache-controller env "PYTHONHASHSEED=$LMCACHE_HASH_SEED" \
