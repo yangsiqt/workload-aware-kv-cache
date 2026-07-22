@@ -12,6 +12,7 @@ START_TIMEOUT="${FOUR_H20_START_TIMEOUT:-720}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-40960}"
 MAX_NUM_SEQS="${MAX_NUM_SEQS:-8}"
 GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.90}"
+MOONCAKE_MASTER_METRICS_PORT="${MOONCAKE_MASTER_METRICS_PORT:-9004}"
 DRY_RUN=0
 
 usage() {
@@ -109,7 +110,8 @@ check_preflight() {
 }
 
 start_mooncake_and_controller() {
-  start_process mooncake-master /root/.venvs/kv-worker/bin/mooncake_master -v=1
+  start_process mooncake-master /root/.venvs/kv-worker/bin/mooncake_master -v=1 \
+    --metrics_port="$MOONCAKE_MASTER_METRICS_PORT"
   start_process mooncake-metadata /root/.venvs/kv-worker/bin/mooncake_http_metadata_server --port 8005
   start_process lmcache-controller \
     /root/.venvs/kv-worker/bin/lmcache_controller \
