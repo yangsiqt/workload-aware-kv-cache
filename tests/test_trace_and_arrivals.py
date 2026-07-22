@@ -95,6 +95,7 @@ def route_event(request_id: str, event: str, success=None, attempt_id: int = 0) 
 def test_trace_schema_accepts_adaptive_kv_pd_v12() -> None:
     row = route_event("request", "decision")
     row["schema_version"] = "1.2"
+    row["candidates"][0]["cache_source"] = "lmcache_l1"
     row["kv_path"] = {
         "selected_path": "mooncake_l2",
         "retrieve_mode": "force",
@@ -104,8 +105,19 @@ def test_trace_schema_accepts_adaptive_kv_pd_v12() -> None:
     event = RouteTraceEvent.model_validate(row)
 
     assert event.schema_version == "1.2"
+    assert event.candidates[0].cache_source == "lmcache_l1"
     assert event.kv_path["selected_path"] == "mooncake_l2"
     assert event.execution_mode["selected_mode"] == "pd"
+
+
+def test_trace_schema_accepts_mooncake_l2_cache_source() -> None:
+    row = route_event("request", "decision")
+    row["schema_version"] = "1.2"
+    row["candidates"][0]["cache_source"] = "mooncake_l2"
+
+    event = RouteTraceEvent.model_validate(row)
+
+    assert event.candidates[0].cache_source == "mooncake_l2"
 
 
 def test_arrival_traces_are_reproducible_and_cover_workload(tmp_path: Path) -> None:

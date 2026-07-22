@@ -25,7 +25,14 @@ class CandidateTrace(BaseModel):
     running: int = Field(ge=0)
     waiting: int = Field(ge=0)
     cached_tokens: int = Field(ge=0)
-    cache_source: Literal["none", "affinity", "vllm_event", "lmcache_lookup"]
+    cache_source: Literal[
+        "none",
+        "affinity",
+        "vllm_event",
+        "lmcache_lookup",
+        "lmcache_l1",
+        "mooncake_l2",
+    ]
     cache_confidence: float = Field(ge=0, le=1)
     queue_ms: float = Field(ge=0)
     prefill_ms: float = Field(ge=0)
