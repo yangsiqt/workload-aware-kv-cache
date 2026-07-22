@@ -13,6 +13,7 @@ MAX_MODEL_LEN="${MAX_MODEL_LEN:-40960}"
 MAX_NUM_SEQS="${MAX_NUM_SEQS:-8}"
 GPU_MEMORY_UTILIZATION="${GPU_MEMORY_UTILIZATION:-0.90}"
 MOONCAKE_MASTER_METRICS_PORT="${MOONCAKE_MASTER_METRICS_PORT:-9004}"
+LMCACHE_HASH_SEED="${LMCACHE_HASH_SEED:-123}"
 DRY_RUN=0
 
 usage() {
@@ -113,7 +114,7 @@ start_mooncake_and_controller() {
   start_process mooncake-master /root/.venvs/kv-worker/bin/mooncake_master -v=1 \
     --metrics_port="$MOONCAKE_MASTER_METRICS_PORT"
   start_process mooncake-metadata /root/.venvs/kv-worker/bin/mooncake_http_metadata_server --port 8005
-  start_process lmcache-controller \
+  start_process lmcache-controller env "PYTHONHASHSEED=$LMCACHE_HASH_SEED" \
     /root/.venvs/kv-worker/bin/lmcache_controller \
     --host 127.0.0.1 --port 9000 \
     --monitor-ports '{"pull":9101,"reply":9102,"heartbeat":9103}'
@@ -156,7 +157,7 @@ start_kv() {
       "LMCACHE_WORKLOAD_AWARE_TRACE_PATH=$LOG_ROOT/serving/backend-$gpu.connector-trace.jsonl" \
       "LMCACHE_WORKLOAD_AWARE_ACTUAL_TRACE_PATH=$LOG_ROOT/serving/backend-$gpu.connector-actual-trace.jsonl" \
       VLLM_SERVER_DEV_MODE=1 \
-      PYTHONHASHSEED=123 \
+      "PYTHONHASHSEED=$LMCACHE_HASH_SEED" \
       "${vllm_base[@]}" --port "$port" \
       --kv-transfer-config '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'
     wait_http "backend-$gpu" "http://127.0.0.1:$port/v1/models"
