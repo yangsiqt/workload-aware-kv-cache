@@ -66,6 +66,18 @@ def validate_arrival_trace(
         raise ValueError("arrival trace offsets must be non-decreasing")
 
 
+def connector_options(config: dict[str, Any]) -> dict[str, Any]:
+    options: dict[str, Any] = {
+        "limit": int(config.get("max_in_flight", 64)),
+    }
+    if "keepalive_timeout_s" in config:
+        keepalive_timeout_s = float(config["keepalive_timeout_s"])
+        if keepalive_timeout_s <= 0:
+            raise ValueError("keepalive_timeout_s must be positive")
+        options["keepalive_timeout"] = keepalive_timeout_s
+    return options
+
+
 async def _request(
     session: aiohttp.ClientSession,
     item: WorkloadItem,
@@ -183,7 +195,7 @@ async def run(args: argparse.Namespace) -> Path:
     output_dir = args.output_root / run_id
     output_dir.mkdir(parents=True, exist_ok=False)
     timeout = aiohttp.ClientTimeout(total=float(config.get("timeout_s", 600)))
-    connector = aiohttp.TCPConnector(limit=int(config.get("max_in_flight", 64)))
+    connector = aiohttp.TCPConnector(**connector_options(config))
     semaphore = asyncio.Semaphore(args.concurrency)
     results: list[RequestResult] = []
     origin = time.perf_counter()

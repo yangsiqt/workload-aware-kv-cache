@@ -5,13 +5,24 @@ import aiohttp
 import pytest
 from aiohttp import web
 
-from benchmarks.run_benchmark import _request
+from benchmarks.run_benchmark import _request, connector_options
 from benchmarks.schemas import ChatMessage, SourceInfo, WorkloadItem
 
 
 class FakeTokenizer:
     def encode(self, text, add_special_tokens=False):
         return text.split()
+
+
+def test_connector_keepalive_can_be_shorter_than_router_timeout() -> None:
+    assert connector_options(
+        {"max_in_flight": 64, "keepalive_timeout_s": 4}
+    ) == {"limit": 64, "keepalive_timeout": 4.0}
+
+
+def test_connector_rejects_non_positive_keepalive() -> None:
+    with pytest.raises(ValueError, match="keepalive_timeout_s must be positive"):
+        connector_options({"keepalive_timeout_s": 0})
 
 
 def item() -> WorkloadItem:
