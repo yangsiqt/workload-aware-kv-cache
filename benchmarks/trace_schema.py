@@ -24,6 +24,11 @@ class CandidateTrace(BaseModel):
     backend_url: str
     running: int = Field(ge=0)
     waiting: int = Field(ge=0)
+    waiting_prefill_tokens: int = Field(default=0, ge=0)
+    running_prefill_tokens: int = Field(default=0, ge=0)
+    reserved_prefill_tokens: int = Field(default=0, ge=0)
+    active_decode_sequences: int = Field(default=0, ge=0)
+    workload_metrics_available: bool = False
     cached_tokens: int = Field(ge=0)
     cache_source: Literal[
         "none",
@@ -46,7 +51,7 @@ class CandidateTrace(BaseModel):
 class RouteTraceEvent(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    schema_version: Literal["1.0", "1.1", "1.2"] = "1.2"
+    schema_version: Literal["1.0", "1.1", "1.2", "2.0"] = "1.2"
     event: Literal["decision", "completion"]
     request_id: str
     attempt_id: int = Field(default=0, ge=0)
@@ -58,6 +63,7 @@ class RouteTraceEvent(BaseModel):
     candidates: list[CandidateTrace]
     kv_path: dict[str, Any] | None = None
     execution_mode: dict[str, Any] | None = None
+    v2_context: dict[str, Any] | None = None
     decided_at: float
     success: bool | None = None
     error: str = ""

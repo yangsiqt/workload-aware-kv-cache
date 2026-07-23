@@ -45,7 +45,13 @@ def validate_run(
         row
         for path in sorted(run_dir.glob("connector_actual_trace_gpu*.jsonl"))
         for row in read_jsonl(path)
-        if row.get("event_type") == "actual_retrieve"
+        if (
+            row.get("event_type") == "actual_retrieve"
+            or (
+                row.get("event_type") == "kv_execution_feedback"
+                and row.get("phase") == "worker_retrieve"
+            )
+        )
         and str(row.get("request_id", "")) in workload_ids
     ]
     actual_paths = {

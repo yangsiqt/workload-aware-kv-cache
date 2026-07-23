@@ -141,7 +141,8 @@ def test_validate_run_gates_success_trace_and_actual_path(tmp_path: Path) -> Non
         run_dir / "connector_actual_trace_gpu0.jsonl",
         (
             {
-                "event_type": "actual_retrieve",
+                "event_type": "kv_execution_feedback",
+                "phase": "worker_retrieve",
                 "request_id": f"r-{index}",
                 "actual_kv_path": "lmcache_l1",
             }

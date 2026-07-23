@@ -1,0 +1,27 @@
+policy_level: P-R3
+prefill_tokens_per_s: 5000.0
+prefill_intercept_ms: 0.0
+external_enabled: true
+kv_policy: adaptive_v2
+kv_fixed_min_retrieve_tokens: 1024
+cache_tier_controller_url: http://127.0.0.1:9000
+cache_tier_tokenizer_path: /root/autodl-fs/models/Qwen3-0.6B
+cache_tier_lookup_timeout_s: 0.5
+cache_tier_lookup_workers: 1
+cache_tier_stale_after_s: 5.0
+cache_instance_backend_map:
+  v2-lite-2080ti: http://127.0.0.1:8000
+kv_l1_tokens_per_s: 100000.0
+kv_l2_tokens_per_s: 30000.0
+v2_feedback_path: /root/log/workload-aware-kv-cache/v2-lite-2080ti/serving/backend.connector-actual-trace.jsonl
+v2_feedback_poll_interval_s: 0.1
+v2_ewma_alpha: 0.2
+v2_min_feedback_samples: 3
+v2_reservation_ttl_s: 0.5
+v2_decode_pressure_ms: 25.0
+# Functional smoke only: do not use these disabled guards for formal results.
+v2_min_gain_ms: 0.0
+v2_min_gain_ratio: 0.0
+v2_min_cache_confidence: 0.5
+pd_enabled: false
+pd_policy: disabled

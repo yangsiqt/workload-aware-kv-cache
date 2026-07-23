@@ -120,6 +120,31 @@ def test_trace_schema_accepts_mooncake_l2_cache_source() -> None:
     assert event.candidates[0].cache_source == "mooncake_l2"
 
 
+def test_trace_schema_accepts_v2_workload_and_guard_context() -> None:
+    row = route_event("request", "decision")
+    row["schema_version"] = "2.0"
+    row["candidates"][0].update(
+        {
+            "waiting_prefill_tokens": 8192,
+            "running_prefill_tokens": 1024,
+            "reserved_prefill_tokens": 4096,
+            "active_decode_sequences": 2,
+            "workload_metrics_available": True,
+        }
+    )
+    row["v2_context"] = {
+        "guard_reason": "v2_override_fixed",
+        "gain_ms": 600,
+        "gain_ratio": 0.2,
+    }
+
+    event = RouteTraceEvent.model_validate(row)
+
+    assert event.schema_version == "2.0"
+    assert event.candidates[0].waiting_prefill_tokens == 8192
+    assert event.v2_context["guard_reason"] == "v2_override_fixed"
+
+
 def test_arrival_traces_are_reproducible_and_cover_workload(tmp_path: Path) -> None:
     workload = tmp_path / "workload.jsonl"
     write_jsonl(

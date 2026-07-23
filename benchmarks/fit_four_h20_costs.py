@@ -52,7 +52,13 @@ def _actual_rows(run_dir: Path, path_name: str) -> list[dict[str, Any]]:
         row
         for path in sorted(run_dir.glob("connector_actual_trace_gpu*.jsonl"))
         for row in read_jsonl(path)
-        if row.get("event_type") == "actual_retrieve"
+        if (
+            row.get("event_type") == "actual_retrieve"
+            or (
+                row.get("event_type") == "kv_execution_feedback"
+                and row.get("phase") == "worker_retrieve"
+            )
+        )
         and row.get("actual_kv_path") == path_name
         and float(row.get("load_ms", 0)) > 0
         and int(row.get("retrieved_tokens", 0)) > 0

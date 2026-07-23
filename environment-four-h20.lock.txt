@@ -1,17 +1,17 @@
 # Generated four-H20 environment lock
 # Regenerate with the documented kv-worker environment.
 project_commit=3413ba227887c09f55bf57236b052c6f6d3f198b
-production_stack_commit=6abdb074db311556580553bbe1d867b33b83f21d
-vllm_commit=702f4814fe54fabff350d43cb753ae3e47c0c276
-lmcache_commit=f8efc3d66fde447796e6822ce8a2dee18c593b7b
+production_stack_commit=0125634f60fd3c32497f779e10e8695b915f78c4
+vllm_commit=a058069ca7c512fc88f4dea1f312d516d91704bb
+lmcache_commit=d44e416bd627a2dfdee9bd6ad892919d713dfd69
 mooncake_commit=d65bbd9810bb8322cd37aa18e50141760e050949
 gpu=NVIDIA GeForce RTX 2080 Ti
-driver=580.105.08
+driver=580.76.05
 torch=2.11.0+cu130
 vllm=0.25.0
 mooncake_wheel_sha256=1f0b62ef625bf017eb4f1717d7240bf72ba22cb9c0abd93fcd28ed53bbb492b9
 lmcache_base_wheel_sha256=fa2fb1c3160f4b6542b0ff5cbd78632b3fa36b326a561162cd959523ea552540
-lmcache_patched_wheel_sha256=55a0acb0b7336cf5828924ed724f9711d16723c605993c4d015d20251ff7c1b3
+lmcache_patched_wheel_sha256=550fa5728324a03d1ac7ab55b346c7a55794631695604c8465c68cb7d457ac77
 Brotli @ file:///croot/brotli-split_1714483155106/work
 Jinja2==3.1.6
 Markdown==3.10.2

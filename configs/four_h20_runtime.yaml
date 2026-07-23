@@ -8,7 +8,7 @@ lmcache_base_wheel:
   sha256: "fa2fb1c3160f4b6542b0ff5cbd78632b3fa36b326a561162cd959523ea552540"
 lmcache_patched_wheel:
   path: "/root/wheels/workload-aware-kv-cache/patched/lmcache-0.5.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
-  sha256: "55a0acb0b7336cf5828924ed724f9711d16723c605993c4d015d20251ff7c1b3"
+  sha256: "550fa5728324a03d1ac7ab55b346c7a55794631695604c8465c68cb7d457ac77"
 runtime:
   ld_preload: "/usr/lib/x86_64-linux-gnu/libstdc++.so.6"
   tokenizer_path: "/root/autodl-fs/models/Qwen3-30B-A3B-Instruct-2507"

@@ -131,7 +131,7 @@ def inspect() -> dict[str, Any]:
         "/root/wheels/workload-aware-kv-cache/patched/"
         "lmcache-0.5.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
     )
-    expected_patched_sha = "d16ee84efb7d1dd473b4e82c435beef52c45178b0801a02167dacb8d4f88975c"
+    expected_patched_sha = "550fa5728324a03d1ac7ab55b346c7a55794631695604c8465c68cb7d457ac77"
     check(
         "patched_lmcache_wheel",
         patched.exists() and sha256_file(patched) == expected_patched_sha,
@@ -156,6 +156,7 @@ def inspect() -> dict[str, Any]:
             "run_four_h20_stage.sh",
             "run_four_h20_kv_window.sh",
             "run_four_h20_pd_window.sh",
+            "run_four_h20_kv_v2.sh",
             "build_patched_lmcache_wheel.sh",
             "install_patched_lmcache.sh",
             "restore_official_lmcache.sh",
@@ -193,9 +194,10 @@ def inspect() -> dict[str, Any]:
         "mooncake": _git_state(Path("/root/Mooncake")),
     }
     expected_branches = {
-        "project": "feature/four-h20-adaptive-kv-pd",
-        "production_stack": "feature/adaptive-kv-pd-router",
-        "lmcache": "feature/workload-aware-kv-path",
+        "project": "feature/four-h20-v2-lite",
+        "production_stack": "feature/v2-lite-router",
+        "vllm": "feature/v2-lite-scheduler-telemetry",
+        "lmcache": "feature/v2-lite-feedback",
     }
     check(
         "feature_branches",
