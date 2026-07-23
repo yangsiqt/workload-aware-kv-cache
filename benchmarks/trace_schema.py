@@ -28,7 +28,15 @@ class CandidateTrace(BaseModel):
     running_prefill_tokens: int = Field(default=0, ge=0)
     reserved_prefill_tokens: int = Field(default=0, ge=0)
     active_decode_sequences: int = Field(default=0, ge=0)
+    scheduled_prefill_tokens: int = Field(default=0, ge=0)
+    scheduled_decode_tokens: int = Field(default=0, ge=0)
+    skipped_waiting_prefill_tokens: int = Field(default=0, ge=0)
+    kv_cache_free_blocks: int = Field(default=0, ge=0)
+    kv_cache_total_blocks: int = Field(default=0, ge=0)
+    kv_capacity_pressure_ms: float = Field(default=0, ge=0)
+    preemptions_total: int = Field(default=0, ge=0)
     workload_metrics_available: bool = False
+    v2_1_metrics_available: bool = False
     cached_tokens: int = Field(ge=0)
     cache_source: Literal[
         "none",
@@ -51,7 +59,7 @@ class CandidateTrace(BaseModel):
 class RouteTraceEvent(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    schema_version: Literal["1.0", "1.1", "1.2", "2.0"] = "1.2"
+    schema_version: Literal["1.0", "1.1", "1.2", "2.0", "2.1"] = "1.2"
     event: Literal["decision", "completion"]
     request_id: str
     attempt_id: int = Field(default=0, ge=0)
@@ -77,6 +85,7 @@ class RouteAttempt(BaseModel):
     attempt_id: int = Field(ge=0)
     decision: RouteTraceEvent
     completion: RouteTraceEvent
+    worker_events: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class JoinedTrace(BaseModel):

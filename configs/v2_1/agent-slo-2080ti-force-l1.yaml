@@ -1,0 +1,17 @@
+policy_level: P-R3
+prefill_tokens_per_s: 5000.0
+external_enabled: true
+kv_policy: force_l1
+kv_fixed_min_retrieve_tokens: 0
+cache_tier_controller_url: http://127.0.0.1:9000
+cache_tier_tokenizer_path: /root/autodl-fs/models/Qwen3-0.6B
+cache_tier_lookup_timeout_s: 0.5
+cache_tier_lookup_workers: 1
+cache_tier_stale_after_s: 5.0
+cache_instance_backend_map:
+  v2-1-2080ti: http://127.0.0.1:8000
+kv_l1_tokens_per_s: 100000.0
+kv_l2_tokens_per_s: 30000.0
+v2_lifecycle_path: /root/log/workload-aware-kv-cache/v2-1-2080ti/serving/backend.connector-trace.jsonl
+pd_enabled: false
+pd_policy: disabled

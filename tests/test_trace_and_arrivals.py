@@ -145,6 +145,30 @@ def test_trace_schema_accepts_v2_workload_and_guard_context() -> None:
     assert event.v2_context["guard_reason"] == "v2_override_fixed"
 
 
+def test_trace_schema_accepts_v2_1_scheduler_capacity_metrics() -> None:
+    row = route_event("request", "decision")
+    row["schema_version"] = "2.1"
+    row["candidates"][0].update(
+        {
+            "scheduled_prefill_tokens": 512,
+            "scheduled_decode_tokens": 7,
+            "skipped_waiting_prefill_tokens": 4096,
+            "kv_cache_free_blocks": 8,
+            "kv_cache_total_blocks": 128,
+            "kv_capacity_pressure_ms": 25.0,
+            "preemptions_total": 2,
+            "v2_1_metrics_available": True,
+        }
+    )
+
+    event = RouteTraceEvent.model_validate(row)
+
+    assert event.schema_version == "2.1"
+    assert event.candidates[0].scheduled_prefill_tokens == 512
+    assert event.candidates[0].kv_cache_total_blocks == 128
+    assert event.candidates[0].v2_1_metrics_available is True
+
+
 def test_arrival_traces_are_reproducible_and_cover_workload(tmp_path: Path) -> None:
     workload = tmp_path / "workload.jsonl"
     write_jsonl(
@@ -263,6 +287,103 @@ def test_trace_join_preserves_failover_attempts(tmp_path: Path) -> None:
     joined = json.loads(output.read_text())
     assert [item["attempt_id"] for item in joined["attempts"]] == [0, 1]
     assert joined["route"]["decision_id"] == "request:1"
+
+
+def _v2_1_worker_events(
+    request_id: str = "request",
+    *,
+    selected: str = "lmcache_l1",
+    actual: str = "lmcache_l1",
+) -> list[dict]:
+    common = {
+        "schema_version": "2.1",
+        "event_type": "kv_execution_feedback",
+        "request_id": request_id,
+        "attempt_id": "0",
+        "decision_id": f"{request_id}:0",
+        "backend_id": "http://backend-0",
+        "selected_path": selected,
+        "terminal": False,
+    }
+    return [
+        {**common, "phase": "scheduler_seen", "recorded_at": 1.1},
+        {**common, "phase": "lookup_started", "recorded_at": 1.2},
+        {**common, "phase": "lookup_completed", "recorded_at": 1.3},
+        {**common, "phase": "scheduler_admitted", "recorded_at": 1.4},
+        {**common, "phase": "load_started", "recorded_at": 1.5},
+        {
+            **common,
+            "phase": "load_completed",
+            "actual_kv_path": actual,
+            "path_mismatch": selected != actual,
+            "recorded_at": 1.6,
+        },
+        {
+            **common,
+            "phase": "request_finished",
+            "terminal": True,
+            "recorded_at": 1.7,
+        },
+    ]
+
+
+def test_trace_join_v2_1_includes_worker_lifecycle(tmp_path: Path) -> None:
+    client = tmp_path / "client.jsonl"
+    router = tmp_path / "router.jsonl"
+    worker = tmp_path / "worker.jsonl"
+    output = tmp_path / "joined.jsonl"
+    decision = route_event("request", "decision")
+    completion = route_event("request", "completion", True)
+    for row in (decision, completion):
+        row["schema_version"] = "2.1"
+        row["backend_url"] = "http://backend-0"
+        row["kv_path"] = {"selected_path": "lmcache_l1"}
+    write_jsonl(client, [request_result("request")])
+    write_jsonl(router, [decision, completion])
+    write_jsonl(worker, _v2_1_worker_events())
+
+    assert join(client, router, output, [worker]) == 1
+    joined = json.loads(output.read_text())
+    assert len(joined["attempts"][0]["worker_events"]) == 7
+
+
+def test_trace_join_v2_1_rejects_missing_terminal(tmp_path: Path) -> None:
+    client = tmp_path / "client.jsonl"
+    router = tmp_path / "router.jsonl"
+    worker = tmp_path / "worker.jsonl"
+    decision = route_event("request", "decision")
+    completion = route_event("request", "completion", True)
+    for row in (decision, completion):
+        row["schema_version"] = "2.1"
+        row["backend_url"] = "http://backend-0"
+        row["kv_path"] = {"selected_path": "lmcache_l1"}
+    write_jsonl(client, [request_result("request")])
+    write_jsonl(router, [decision, completion])
+    write_jsonl(
+        worker,
+        [row for row in _v2_1_worker_events() if row["phase"] != "request_finished"],
+    )
+
+    with pytest.raises(ValueError, match="terminal"):
+        join(client, router, tmp_path / "joined.jsonl", [worker])
+
+
+def test_trace_join_v2_1_rejects_selected_actual_mismatch(tmp_path: Path) -> None:
+    client = tmp_path / "client.jsonl"
+    router = tmp_path / "router.jsonl"
+    worker = tmp_path / "worker.jsonl"
+    decision = route_event("request", "decision")
+    completion = route_event("request", "completion", True)
+    for row in (decision, completion):
+        row["schema_version"] = "2.1"
+        row["backend_url"] = "http://backend-0"
+        row["kv_path"] = {"selected_path": "lmcache_l1"}
+    write_jsonl(client, [request_result("request")])
+    write_jsonl(router, [decision, completion])
+    write_jsonl(worker, _v2_1_worker_events(actual="mooncake_l2"))
+
+    with pytest.raises(ValueError, match="mismatch"):
+        join(client, router, tmp_path / "joined.jsonl", [worker])
 
 
 def test_environment_log_file_can_be_overridden(tmp_path: Path) -> None:

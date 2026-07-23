@@ -17,3 +17,5 @@ extra_config:
   global_segment_size: 17179869184
   local_buffer_size: 1073741824
   transfer_timeout: 2
+  mooncake_enable_client_http_server: true
+  mooncake_client_http_port: 9301

@@ -129,9 +129,7 @@ def test_analyze_rejects_mismatched_before_after_trace(tmp_path: Path) -> None:
 def test_validate_run_gates_success_trace_and_actual_path(tmp_path: Path) -> None:
     run_dir = _run(tmp_path, "validated", "lmcache_l1")
     workload = tmp_path / "workload.jsonl"
-    workload_rows = [
-        {"request_id": f"r-{index}"} for index in range(20)
-    ]
+    workload_rows = [{"request_id": f"r-{index}"} for index in range(20)]
     write_jsonl(workload, workload_rows)
     write_jsonl(
         run_dir / "joined_trace.jsonl",
@@ -157,6 +155,50 @@ def test_validate_run_gates_success_trace_and_actual_path(tmp_path: Path) -> Non
         required_actual_kv_paths={"lmcache_l1"},
     )
     assert report["passed"] is True
+
+
+def test_validate_run_gates_v2_1_worker_lifecycle(tmp_path: Path) -> None:
+    run_dir = _run(tmp_path, "v2-1-validated", "lmcache_l1")
+    workload = tmp_path / "workload-v2-1.jsonl"
+    write_jsonl(workload, ({"request_id": f"r-{index}"} for index in range(20)))
+    write_jsonl(
+        run_dir / "joined_trace.jsonl",
+        (
+            {
+                "request_id": f"r-{index}",
+                "client": {"success": True},
+                "attempts": [
+                    {
+                        "decision": {
+                            "decision_id": f"r-{index}:0",
+                            "kv_path": {"selected_path": "lmcache_l1"},
+                        },
+                        "completion": {"success": True},
+                        "worker_events": [
+                            {"phase": "scheduler_seen", "terminal": False},
+                            {
+                                "phase": "load_completed",
+                                "terminal": False,
+                                "actual_kv_path": "lmcache_l1",
+                                "path_mismatch": False,
+                            },
+                            {"phase": "request_finished", "terminal": True},
+                        ],
+                    }
+                ],
+            }
+            for index in range(20)
+        ),
+    )
+    report = validate_run(
+        run_dir,
+        workload,
+        min_success_rate=1.0,
+        require_v2_1_worker_lifecycle=True,
+    )
+    assert report["passed"] is True
+    assert report["scheduler_seen_attempts"] == 20
+    assert report["worker_terminal_attempts"] == 20
 
 
 def test_fit_kv_freezes_worker_measured_costs(tmp_path: Path) -> None:
@@ -230,6 +272,4 @@ def test_fit_pd_freezes_measured_transfer_cost(tmp_path: Path) -> None:
         tmp_path / "pd-fit.json",
     )
     assert report["measured"]["prefill_tokens_per_s"] == pytest.approx(8000.0)
-    assert report["measured"]["pd_transfer_tokens_per_s"] == pytest.approx(
-        20000.0
-    )
+    assert report["measured"]["pd_transfer_tokens_per_s"] == pytest.approx(20000.0)

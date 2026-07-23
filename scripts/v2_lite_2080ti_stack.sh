@@ -10,6 +10,10 @@ MOONCAKE_MASTER="/root/.venvs/kv-worker/lib/python3.12/site-packages/mooncake/mo
 LOG_ROOT="${V2_LITE_LOG_ROOT:-/root/log/workload-aware-kv-cache/v2-lite-2080ti}"
 PID_DIR="$LOG_ROOT/pids"
 MAX_NUM_SEQS="${SMOKE_MAX_NUM_SEQS:-1}"
+LMCACHE_CONFIG="${SMOKE_LMCACHE_CONFIG:-$ROOT/configs/v2_lite/lmcache-2080ti.yaml}"
+ROUTER_CONFIG="${SMOKE_ROUTER_CONFIG:-$ROOT/configs/v2_lite/agent-slo-2080ti.yaml}"
+LMCACHE_INSTANCE_ID="${SMOKE_LMCACHE_INSTANCE_ID:-v2-lite-2080ti}"
+MOONCAKE_CLIENT_METRICS_PORT="${SMOKE_MOONCAKE_CLIENT_METRICS_PORT:-9300}"
 
 mkdir -p "$PID_DIR" "$LOG_ROOT/components" "$LOG_ROOT/serving" "$LOG_ROOT/routing"
 
@@ -108,7 +112,7 @@ start_all() {
 
   start_process backend env \
     CUDA_VISIBLE_DEVICES=0 \
-    LMCACHE_CONFIG_FILE="$ROOT/configs/v2_lite/lmcache-2080ti.yaml" \
+    LMCACHE_CONFIG_FILE="$LMCACHE_CONFIG" \
     LMCACHE_WORKLOAD_AWARE_TRACE_PATH="$LOG_ROOT/serving/backend.connector-trace.jsonl" \
     LMCACHE_WORKLOAD_AWARE_ACTUAL_TRACE_PATH="$LOG_ROOT/serving/backend.connector-actual-trace.jsonl" \
     VLLM_SERVER_DEV_MODE=1 PYTHONHASHSEED=123 \
@@ -120,6 +124,16 @@ start_all() {
     --kv-transfer-config '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'
   wait_http backend http://127.0.0.1:8000/v1/models
 
+  if grep -q 'enable_client_http_server: true' "$LMCACHE_CONFIG"; then
+    wait_http backend "http://127.0.0.1:$MOONCAKE_CLIENT_METRICS_PORT/health"
+  fi
+
+  start_router "$ROUTER_CONFIG"
+}
+
+start_router() {
+  local config="$1"
+  stop_one "$PID_DIR/router.pid"
   start_process router "$ROUTER" \
     --host 127.0.0.1 --port 9003 \
     --service-discovery static \
@@ -128,14 +142,31 @@ start_all() {
     --static-model-labels monolithic \
     --routing-logic agent_slo_aware \
     --engine-stats-interval 0.25 \
-    --agent-slo-config "$ROOT/configs/v2_lite/agent-slo-2080ti.yaml" \
+    --agent-slo-config "$config" \
     --agent-slo-trace-path "$LOG_ROOT/routing/router-trace.jsonl" \
     --session-key X-Session-ID
   wait_http router http://127.0.0.1:9003/health
 }
 
+reset_hbm() {
+  local reset_external="${1:-false}"
+  curl -fsS -X POST \
+    "http://127.0.0.1:8000/reset_prefix_cache?reset_external=$reset_external" \
+    >/dev/null
+}
+
+clear_l1() {
+  local payload
+  payload="{\"instance_id\":\"$LMCACHE_INSTANCE_ID\",\"location\":\"LocalCPUBackend\"}"
+  curl -fsS -X POST -H 'Content-Type: application/json' -d "$payload" \
+    http://127.0.0.1:9000/clear >/dev/null
+}
+
 case "$ACTION" in
   start) start_all ;;
+  router) start_router "${2:?router config required}" ;;
+  reset-hbm) reset_hbm "${2:-false}" ;;
+  clear-l1) clear_l1 ;;
   stop) stop_all ;;
   status)
     for pid_file in "$PID_DIR"/*.pid; do
@@ -145,5 +176,5 @@ case "$ACTION" in
       echo "$(basename "$pid_file" .pid) pid=$pid $state"
     done
     ;;
-  *) echo "usage: $0 start|stop|status" >&2; exit 2 ;;
+  *) echo "usage: $0 start|stop|status|router CONFIG|reset-hbm [true|false]|clear-l1" >&2; exit 2 ;;
 esac

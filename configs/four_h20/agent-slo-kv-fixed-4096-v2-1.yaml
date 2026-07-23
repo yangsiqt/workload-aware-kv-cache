@@ -1,0 +1,22 @@
+policy_level: P-R3
+prefill_tokens_per_s: 6118.979530816657
+prefill_intercept_ms: 0.0
+external_enabled: true
+kv_policy: fixed
+kv_fixed_min_retrieve_tokens: 4096
+cache_tier_controller_url: http://127.0.0.1:9000
+cache_tier_tokenizer_path: /root/autodl-fs/models/Qwen3-30B-A3B-Instruct-2507
+cache_tier_lookup_timeout_s: 0.5
+cache_tier_lookup_workers: 2
+cache_tier_stale_after_s: 1.0
+cache_instance_backend_map:
+  four-h20-backend-0: http://127.0.0.1:8000
+  four-h20-backend-1: http://127.0.0.1:8001
+  four-h20-backend-2: http://127.0.0.1:8002
+  four-h20-backend-3: http://127.0.0.1:8003
+kv_l1_tokens_per_s: 521178.45118808217
+kv_l2_tokens_per_s: 30177.455671655407
+v2_lifecycle_path: /root/log/workload-aware-kv-cache/four-h20/serving/backend-*.connector-trace.jsonl
+v2_reservation_dispatch_timeout_s: 30.0
+pd_enabled: false
+pd_policy: disabled

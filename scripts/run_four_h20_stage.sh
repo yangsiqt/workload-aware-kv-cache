@@ -29,8 +29,40 @@ MIN_SUCCESS_RATE="${MIN_SUCCESS_RATE:-0.99}"
 REQUIRE_SELECTED_KV_PATHS="${REQUIRE_SELECTED_KV_PATHS:-}"
 REQUIRE_ACTUAL_KV_PATHS="${REQUIRE_ACTUAL_KV_PATHS:-}"
 REQUIRE_EXECUTION_MODES="${REQUIRE_EXECUTION_MODES:-}"
+REQUIRE_V2_1_WORKER_LIFECYCLE="${REQUIRE_V2_1_WORKER_LIFECYCLE:-false}"
 metrics_pid=""
 declare -a connector_offsets actual_offsets
+
+join_command() {
+  local -a command=(
+    python -m benchmarks.join_traces
+    "$RUN_ROOT/$RUN_ID/requests.jsonl" "$TRACE"
+    "$RUN_ROOT/$RUN_ID/joined_trace.jsonl"
+  )
+  if [[ "$REQUIRE_V2_1_WORKER_LIFECYCLE" == "true" ]]; then
+    for gpu in 0 1 2 3; do
+      command+=(
+        --worker-trace "$RUN_ROOT/$RUN_ID/connector_trace_gpu$gpu.jsonl"
+        --worker-trace "$RUN_ROOT/$RUN_ID/connector_actual_trace_gpu$gpu.jsonl"
+      )
+    done
+  fi
+  "${command[@]}"
+}
+
+validate_command() {
+  local -a command=(
+    python -m benchmarks.validate_four_h20_run "$RUN_ROOT/$RUN_ID" "$WORKLOAD"
+    --min-success-rate "$MIN_SUCCESS_RATE"
+    --require-selected-kv-paths "$REQUIRE_SELECTED_KV_PATHS"
+    --require-actual-kv-paths "$REQUIRE_ACTUAL_KV_PATHS"
+    --require-execution-modes "$REQUIRE_EXECUTION_MODES"
+  )
+  if [[ "$REQUIRE_V2_1_WORKER_LIFECYCLE" == "true" ]]; then
+    command+=(--require-v2-1-worker-lifecycle)
+  fi
+  "${command[@]}"
+}
 
 print_command() {
   printf 'DRY-RUN:'
@@ -68,12 +100,8 @@ if [[ "$DRY_RUN" == "1" ]]; then
     --backend gpu0=http://127.0.0.1:8000 --backend gpu1=http://127.0.0.1:8001 \
     --backend gpu2=http://127.0.0.1:8002 --backend gpu3=http://127.0.0.1:8003
   print_command "${benchmark[@]}"
-  print_command python -m benchmarks.join_traces "$RUN_ROOT/$RUN_ID/requests.jsonl" "$TRACE" "$RUN_ROOT/$RUN_ID/joined_trace.jsonl"
-  print_command python -m benchmarks.validate_four_h20_run "$RUN_ROOT/$RUN_ID" "$WORKLOAD" \
-    --min-success-rate "$MIN_SUCCESS_RATE" \
-    --require-selected-kv-paths "$REQUIRE_SELECTED_KV_PATHS" \
-    --require-actual-kv-paths "$REQUIRE_ACTUAL_KV_PATHS" \
-    --require-execution-modes "$REQUIRE_EXECUTION_MODES"
+  print_command join_command
+  print_command validate_command
   exit 0
 fi
 
@@ -116,30 +144,16 @@ for gpu in 0 1 2 3; do
   fi
 done
 for _ in $(seq 1 40); do
-  if python -m benchmarks.join_traces \
-    "$RUN_ROOT/$RUN_ID/requests.jsonl" "$TRACE" \
-    "$RUN_ROOT/$RUN_ID/joined_trace.jsonl" >/dev/null 2>&1; then
+  if join_command >/dev/null 2>&1; then
     cp "$TRACE" "$RUN_ROOT/$RUN_ID/router_trace.jsonl"
     cp "$METRICS" "$RUN_ROOT/$RUN_ID/backend_metrics.jsonl"
-    python -m benchmarks.validate_four_h20_run \
-      "$RUN_ROOT/$RUN_ID" "$WORKLOAD" \
-      --min-success-rate "$MIN_SUCCESS_RATE" \
-      --require-selected-kv-paths "$REQUIRE_SELECTED_KV_PATHS" \
-      --require-actual-kv-paths "$REQUIRE_ACTUAL_KV_PATHS" \
-      --require-execution-modes "$REQUIRE_EXECUTION_MODES"
+    validate_command
     echo "$RUN_ROOT/$RUN_ID"
     exit 0
   fi
   sleep 0.25
 done
-python -m benchmarks.join_traces \
-  "$RUN_ROOT/$RUN_ID/requests.jsonl" "$TRACE" \
-  "$RUN_ROOT/$RUN_ID/joined_trace.jsonl"
+join_command
 cp "$TRACE" "$RUN_ROOT/$RUN_ID/router_trace.jsonl"
 cp "$METRICS" "$RUN_ROOT/$RUN_ID/backend_metrics.jsonl"
-python -m benchmarks.validate_four_h20_run \
-  "$RUN_ROOT/$RUN_ID" "$WORKLOAD" \
-  --min-success-rate "$MIN_SUCCESS_RATE" \
-  --require-selected-kv-paths "$REQUIRE_SELECTED_KV_PATHS" \
-  --require-actual-kv-paths "$REQUIRE_ACTUAL_KV_PATHS" \
-  --require-execution-modes "$REQUIRE_EXECUTION_MODES"
+validate_command

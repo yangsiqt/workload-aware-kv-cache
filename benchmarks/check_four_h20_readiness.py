@@ -15,6 +15,12 @@ from benchmarks.schemas import ArrivalTraceItem, WorkloadItem
 ROOT = Path("/root/workload-aware-kv-cache")
 DATA = Path("/root/workload-aware-kv-cache-data/processed/four_h20")
 TRACES = Path("/root/workload-aware-kv-cache-data/traces/four_h20")
+V2_1_WHEELS = Path("/root/wheels/workload-aware-kv-cache/v2-1")
+
+
+def _wheel_from_manifest(path: Path) -> tuple[str, Path]:
+    expected_sha, wheel_path = path.read_text(encoding="utf-8").strip().split(maxsplit=1)
+    return expected_sha, Path(wheel_path)
 
 
 def _git_state(path: Path) -> dict[str, Any]:
@@ -111,6 +117,25 @@ def inspect() -> dict[str, Any]:
         traces_valid &= valid
         trace_details[f"{rps}rps"] = {"sha256": sha256_file(path), "valid": valid}
     check("candidate_arrival_traces", traces_valid, trace_details)
+    independent_details = {}
+    independent_valid = True
+    for rps in (2, 4):
+        path = TRACES / f"{rps}rps" / f"swe-final-poisson-{rps}rps-r2.jsonl"
+        rows = [ArrivalTraceItem.model_validate(row) for row in read_jsonl(path)]
+        ids = [row.request_id for row in rows]
+        offsets = [row.offset_s for row in rows]
+        valid = (
+            len(rows) == 1200
+            and len(ids) == len(set(ids))
+            and set(ids) == request_ids
+            and offsets == sorted(offsets)
+        )
+        independent_valid &= valid
+        independent_details[f"{rps}rps-r2"] = {
+            "sha256": sha256_file(path),
+            "valid": valid,
+        }
+    check("v2_1_independent_arrival_traces", independent_valid, independent_details)
 
     runtime = json.loads(
         subprocess.check_output(
@@ -127,26 +152,37 @@ def inspect() -> dict[str, Any]:
         runtime == {"torch": "2.11.0+cu130", "vllm": "0.25.0"},
         runtime,
     )
-    patched = Path(
-        "/root/wheels/workload-aware-kv-cache/patched/"
-        "lmcache-0.5.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
-    )
-    expected_patched_sha = "550fa5728324a03d1ac7ab55b346c7a55794631695604c8465c68cb7d457ac77"
-    check(
-        "patched_lmcache_wheel",
-        patched.exists() and sha256_file(patched) == expected_patched_sha,
-        expected_patched_sha,
-    )
-    mooncake = Path(
-        "/root/wheels/workload-aware-kv-cache/"
-        "mooncake_transfer_engine_cuda13-0.3.11.post1-cp312-cp312-manylinux_2_35_x86_64.whl"
+    lmcache_sha, lmcache_wheel = _wheel_from_manifest(
+        V2_1_WHEELS / "lmcache" / "lmcache-v2-1.sha256"
     )
     check(
-        "mooncake_cuda13_wheel",
-        mooncake.exists()
-        and sha256_file(mooncake)
-        == "1f0b62ef625bf017eb4f1717d7240bf72ba22cb9c0abd93fcd28ed53bbb492b9",
-        "CUDA13 wheel hash",
+        "v2_1_lmcache_wheel",
+        lmcache_wheel.exists() and sha256_file(lmcache_wheel) == lmcache_sha,
+        {"path": str(lmcache_wheel), "sha256": lmcache_sha},
+    )
+    mooncake_sha, mooncake_wheel = _wheel_from_manifest(
+        V2_1_WHEELS / "mooncake" / "mooncake-v2-1.sha256"
+    )
+    check(
+        "v2_1_mooncake_cuda13_wheel",
+        mooncake_wheel.exists() and sha256_file(mooncake_wheel) == mooncake_sha,
+        {"path": str(mooncake_wheel), "sha256": mooncake_sha},
+    )
+    c_ops_path = subprocess.check_output(
+        [
+            "/root/.venvs/kv-worker/bin/python",
+            "-c",
+            "import lmcache.c_ops; print(lmcache.c_ops.__file__)",
+        ],
+        text=True,
+    ).splitlines()[-1]
+    cubins = subprocess.check_output(
+        ["/usr/local/cuda-13.0/bin/cuobjdump", "--list-elf", c_ops_path], text=True
+    )
+    check(
+        "lmcache_cuda_architectures",
+        ".sm_75.cubin" in cubins and ".sm_90.cubin" in cubins,
+        "wheel contains sm_75 for 2080 Ti and sm_90 for H20",
     )
 
     scripts = [
@@ -156,10 +192,11 @@ def inspect() -> dict[str, Any]:
             "run_four_h20_stage.sh",
             "run_four_h20_kv_window.sh",
             "run_four_h20_pd_window.sh",
-            "run_four_h20_kv_v2.sh",
-            "build_patched_lmcache_wheel.sh",
-            "install_patched_lmcache.sh",
-            "restore_official_lmcache.sh",
+            "run_four_h20_kv_v2_1.sh",
+            "run_v2_1_2080ti_smoke.sh",
+            "build_v2_1_lmcache_wheel.sh",
+            "build_v2_1_mooncake_wheel.sh",
+            "install_v2_1_runtime.sh",
         )
     ]
     check(
@@ -170,7 +207,7 @@ def inspect() -> dict[str, Any]:
     support_modules = [
         ROOT / "benchmarks" / "fit_four_h20_costs.py",
         ROOT / "benchmarks" / "validate_four_h20_run.py",
-        ROOT / "patches" / "lmcache-0.5.1-cache-engine-actual-trace.patch",
+        ROOT / "benchmarks" / "smoke_v2_1_2080ti.py",
     ]
     check(
         "measured_cost_and_runtime_gates",
@@ -185,6 +222,22 @@ def inspect() -> dict[str, Any]:
         stack_source.count('"mooncake_protocol":"tcp"') == 2,
         "producer and consumer explicitly use TCP",
     )
+    smoke_report_path = Path(
+        "/root/log/workload-aware-kv-cache/v2-1-2080ti/smoke-report.json"
+    )
+    smoke_report = json.loads(smoke_report_path.read_text(encoding="utf-8"))
+    check(
+        "v2_1_2080ti_functional_smoke",
+        smoke_report.get("passed") is True
+        and smoke_report.get("scope") == "FUNCTIONAL_SMOKE_NOT_PERFORMANCE"
+        and smoke_report.get("strict_l1_actual_path") == "lmcache_l1"
+        and smoke_report.get("strict_l2_actual_path") == "mooncake_l2",
+        {
+            "path": str(smoke_report_path),
+            "scope": smoke_report.get("scope"),
+            "run_id": smoke_report.get("run_id"),
+        },
+    )
 
     repositories = {
         "project": _git_state(ROOT),
@@ -194,10 +247,11 @@ def inspect() -> dict[str, Any]:
         "mooncake": _git_state(Path("/root/Mooncake")),
     }
     expected_branches = {
-        "project": "feature/four-h20-v2-lite",
-        "production_stack": "feature/v2-lite-router",
-        "vllm": "feature/v2-lite-scheduler-telemetry",
-        "lmcache": "feature/v2-lite-feedback",
+        "project": "feature/four-h20-v2-1",
+        "production_stack": "feature/v2-1-router",
+        "vllm": "feature/v2-1-scheduler-telemetry",
+        "lmcache": "feature/v2-1-feedback-path-control",
+        "mooncake": "feature/v2-1-transfer-telemetry",
     }
     check(
         "feature_branches",
@@ -212,9 +266,12 @@ def inspect() -> dict[str, Any]:
 
     ready = all(value["passed"] for value in checks)
     return {
-        "schema_version": "1.0",
-        "status": "READY FOR 4xH20" if ready else "NOT READY",
-        "scope": "pre-rental artifacts; K01/P01 remain mandatory runtime gates",
+        "schema_version": "2.1",
+        "status": "READY FOR 4×H20 VALIDATION" if ready else "NOT READY",
+        "scope": (
+            "V2.1 source, wheels, scripts and 2080 Ti functional smoke are ready; "
+            "four-H20 topology and performance validation remain pending"
+        ),
         "checks": checks,
         "repositories": repositories,
         "formal_workload_sha256": sha256_file(workload_path),
@@ -238,9 +295,10 @@ def write_markdown(report: dict[str, Any], path: Path) -> None:
     lines.extend(
         [
             "",
-            "This status means the data, code, wheels, dry-run orchestration and analysis "
-            "are prepared. Real LMCache/Mooncake/PD runtime validation is intentionally "
-            "deferred to K01/P01 on 4 x H20 and cannot be claimed from the 2080 Ti host.",
+            "This status means the data, code, dual-architecture wheels, dry-run "
+            "orchestration and 2080 Ti functional L1/L2 evidence are prepared. Real "
+            "four-backend topology and performance validation remain mandatory on "
+            "4×H20 and cannot be claimed from this host.",
         ]
     )
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -262,7 +320,7 @@ def main() -> None:
     write_json(args.output_root / "pre-four-h20-readiness.json", report)
     write_markdown(report, args.output_root / "pre-four-h20-readiness.md")
     print(json.dumps(report, ensure_ascii=False, indent=2))
-    raise SystemExit(0 if report["status"] == "READY FOR 4xH20" else 1)
+    raise SystemExit(0 if report["status"] == "READY FOR 4×H20 VALIDATION" else 1)
 
 
 if __name__ == "__main__":

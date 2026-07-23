@@ -162,6 +162,7 @@ start_kv() {
       "${vllm_base[@]}" --port "$port" \
       --kv-transfer-config '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'
     wait_http "backend-$gpu" "http://127.0.0.1:$port/v1/models"
+    wait_http "backend-$gpu" "http://127.0.0.1:$((9300 + gpu))/health"
   done
   start_router "$PROJECT_ROOT/configs/four_h20/agent-slo-kv-adaptive.yaml" kv
 }

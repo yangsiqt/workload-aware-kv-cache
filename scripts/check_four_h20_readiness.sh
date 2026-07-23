@@ -13,9 +13,15 @@ bash -n \
   "$ROOT/scripts/four_h20_stack.sh" \
   "$ROOT/scripts/run_four_h20_stage.sh" \
   "$ROOT/scripts/run_four_h20_kv_window.sh" \
-  "$ROOT/scripts/run_four_h20_pd_window.sh"
+  "$ROOT/scripts/run_four_h20_pd_window.sh" \
+  "$ROOT/scripts/run_four_h20_kv_v2_1.sh" \
+  "$ROOT/scripts/build_v2_1_lmcache_wheel.sh" \
+  "$ROOT/scripts/build_v2_1_mooncake_wheel.sh" \
+  "$ROOT/scripts/install_v2_1_runtime.sh" \
+  "$ROOT/scripts/run_v2_1_2080ti_smoke.sh"
 FOUR_H20_RUN_TAG=readiness "$ROOT/scripts/run_four_h20_kv_window.sh" --dry-run >/tmp/four-h20-kv-readiness.log
 FOUR_H20_RUN_TAG=readiness "$ROOT/scripts/run_four_h20_pd_window.sh" --dry-run >/tmp/four-h20-pd-readiness.log
+FOUR_H20_RUN_TAG=readiness-v2-1 "$ROOT/scripts/run_four_h20_kv_v2_1.sh" --dry-run >/tmp/four-h20-kv-v2-1-readiness.log
 if [[ "${RUN_READINESS_TESTS:-0}" == "1" ]]; then
   # The generic environment-log test launches a second full environment probe
   # and is already covered by verify_four_h20_environment.sh above.
