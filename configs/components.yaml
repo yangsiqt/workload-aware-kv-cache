@@ -15,7 +15,7 @@ lmcache:
   package: "0.5.1.post1"
   source_commit: "bd7f2fd"
   feature_branch: "feature/v2-1-feedback-path-control"
-  wheel_sha256: "1cf8f6d33b1640f7a2644e47d402b53bea8a86492308c639db436282bd13caed"
+  wheel_sha256: "0433f1895c93666cfc68efe78d916cf93cecb88f94acf2439f025fe2f24c3bd6"
   cuda_architectures: ["sm_75", "sm_90"]
   environment: "/root/.venvs/kv-worker"
 mooncake:

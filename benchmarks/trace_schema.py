@@ -27,17 +27,21 @@ class CandidateTrace(BaseModel):
     waiting_prefill_tokens: int = Field(default=0, ge=0)
     running_prefill_tokens: int = Field(default=0, ge=0)
     reserved_prefill_tokens: int = Field(default=0, ge=0)
+    reserved_external_load_ms: float = Field(default=0, ge=0)
+    reserved_kv_blocks: int = Field(default=0, ge=0)
     active_decode_sequences: int = Field(default=0, ge=0)
     scheduled_prefill_tokens: int = Field(default=0, ge=0)
     scheduled_decode_tokens: int = Field(default=0, ge=0)
     skipped_waiting_prefill_tokens: int = Field(default=0, ge=0)
     kv_cache_free_blocks: int = Field(default=0, ge=0)
     kv_cache_total_blocks: int = Field(default=0, ge=0)
-    kv_capacity_pressure_ms: float = Field(default=0, ge=0)
+    kv_pressure_ms: float = Field(default=0, ge=0)
     preemptions_total: int = Field(default=0, ge=0)
     workload_metrics_available: bool = False
     v2_1_metrics_available: bool = False
     cached_tokens: int = Field(ge=0)
+    local_hbm_cached_tokens: int = Field(default=0, ge=0)
+    required_kv_blocks: int = Field(default=0, ge=0)
     cache_source: Literal[
         "none",
         "affinity",

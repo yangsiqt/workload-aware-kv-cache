@@ -347,6 +347,66 @@ def test_trace_join_v2_1_includes_worker_lifecycle(tmp_path: Path) -> None:
     assert len(joined["attempts"][0]["worker_events"]) == 7
 
 
+def test_trace_join_v2_1_allows_multiple_load_attempts(tmp_path: Path) -> None:
+    client = tmp_path / "client.jsonl"
+    router = tmp_path / "router.jsonl"
+    worker = tmp_path / "worker.jsonl"
+    output = tmp_path / "joined.jsonl"
+    decision = route_event("request", "decision")
+    completion = route_event("request", "completion", True)
+    for row in (decision, completion):
+        row["schema_version"] = "2.1"
+        row["backend_url"] = "http://backend-0"
+        row["kv_path"] = {"selected_path": "lmcache_l1"}
+    events = _v2_1_worker_events()
+    first_load = [
+        row for row in events if row["phase"] in {"load_started", "load_completed"}
+    ]
+    for row in first_load:
+        row["load_attempt_id"] = 0
+    second_load = [
+        {
+            **row,
+            "load_attempt_id": 1,
+            "recorded_at": float(row["recorded_at"]) + 0.05,
+        }
+        for row in first_load
+    ]
+    write_jsonl(client, [request_result("request")])
+    write_jsonl(router, [decision, completion])
+    write_jsonl(worker, [*events, *second_load])
+
+    assert join(client, router, output, [worker]) == 1
+    joined = json.loads(output.read_text())
+    load_completed = [
+        row
+        for row in joined["attempts"][0]["worker_events"]
+        if row["phase"] == "load_completed"
+    ]
+    assert [row["load_attempt_id"] for row in load_completed] == [0, 1]
+
+
+def test_trace_join_v2_1_rejects_duplicate_same_load_attempt(tmp_path: Path) -> None:
+    client = tmp_path / "client.jsonl"
+    router = tmp_path / "router.jsonl"
+    worker = tmp_path / "worker.jsonl"
+    decision = route_event("request", "decision")
+    completion = route_event("request", "completion", True)
+    for row in (decision, completion):
+        row["schema_version"] = "2.1"
+        row["backend_url"] = "http://backend-0"
+        row["kv_path"] = {"selected_path": "lmcache_l1"}
+    events = _v2_1_worker_events()
+    completed = next(row for row in events if row["phase"] == "load_completed")
+    completed["load_attempt_id"] = 0
+    write_jsonl(client, [request_result("request")])
+    write_jsonl(router, [decision, completion])
+    write_jsonl(worker, [*events, dict(completed)])
+
+    with pytest.raises(ValueError, match="duplicate Worker phase"):
+        join(client, router, tmp_path / "joined.jsonl", [worker])
+
+
 def test_trace_join_v2_1_rejects_missing_terminal(tmp_path: Path) -> None:
     client = tmp_path / "client.jsonl"
     router = tmp_path / "router.jsonl"

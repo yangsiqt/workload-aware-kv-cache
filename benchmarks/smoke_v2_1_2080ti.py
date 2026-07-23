@@ -281,6 +281,15 @@ def run(model_path: Path, log_root: Path, target_tokens: int) -> dict[str, Any]:
     ]
     if len(router_rows) != 1:
         raise RuntimeError("reservation probe Router decision is missing")
+    probe_backend = str(router_rows[0].get("backend_url", ""))
+    router_mooncake_snapshot = (
+        (router_rows[0].get("v2_context") or {})
+        .get("feedback", {})
+        .get(probe_backend, {})
+        .get("mooncake_snapshot", {})
+    )
+    if router_mooncake_snapshot.get("stale", True):
+        raise RuntimeError("Router did not ingest fresh Mooncake client metrics")
     reserved_after_completion = sum(
         int(candidate.get("reserved_prefill_tokens", 0))
         for candidate in router_rows[0].get("candidates", [])
@@ -309,6 +318,7 @@ def run(model_path: Path, log_root: Path, target_tokens: int) -> dict[str, Any]:
             "mooncake_transfer_inflight_read_bytes"
         ],
         "router_reserved_prefill_tokens_final": reserved_after_completion,
+        "router_mooncake_snapshot_fresh": True,
         "passed": True,
         "performance_conclusion": "NOT_MEASURED_ON_2080_TI",
     }

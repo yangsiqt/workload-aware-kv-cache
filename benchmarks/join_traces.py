@@ -25,7 +25,7 @@ def _worker_key(row: dict[str, Any]) -> tuple[str, int, str]:
 
 def _load_worker_events(paths: list[Path]) -> dict[tuple[str, int, str], list[dict]]:
     events: dict[tuple[str, int, str], list[dict]] = {}
-    seen: set[tuple[str, int, str, str, str]] = set()
+    seen: set[tuple[str, int, str, str, str, str]] = set()
     for path in paths:
         if not path.exists():
             continue
@@ -37,7 +37,12 @@ def _load_worker_events(paths: list[Path]) -> dict[tuple[str, int, str], list[di
             key = _worker_key(row)
             phase = str(row.get("phase", ""))
             decision_id = str(row.get("decision_id", ""))
-            identity = (*key, decision_id, phase)
+            load_attempt_id = (
+                str(row.get("load_attempt_id", "legacy"))
+                if phase in {"load_started", "load_completed"}
+                else "single"
+            )
+            identity = (*key, decision_id, phase, load_attempt_id)
             if identity in seen:
                 raise ValueError(
                     f"duplicate Worker phase {phase!r} for {key[0]}:{key[1]}"
@@ -62,13 +67,14 @@ def _validate_successful_final_attempt(attempt: RouteAttempt) -> None:
     selected = str((attempt.decision.kv_path or {}).get("selected_path", ""))
     load_completed = [row for row in events if row.get("phase") == "load_completed"]
     if selected in {"lmcache_l1", "mooncake_l2"}:
-        if len(load_completed) != 1:
-            raise ValueError(f"{label} requires exactly one load_completed event")
-        actual = str(load_completed[0].get("actual_kv_path", ""))
-        if load_completed[0].get("path_mismatch") or actual != selected:
-            raise ValueError(
-                f"{label} selected/actual KV path mismatch: {selected}/{actual}"
-            )
+        if not load_completed:
+            raise ValueError(f"{label} requires at least one load_completed event")
+        for event in load_completed:
+            actual = str(event.get("actual_kv_path", ""))
+            if event.get("path_mismatch") or actual != selected:
+                raise ValueError(
+                    f"{label} selected/actual KV path mismatch: {selected}/{actual}"
+                )
     elif load_completed:
         actual = str(load_completed[-1].get("actual_kv_path", ""))
         if actual in {"lmcache_l1", "mooncake_l2"}:
