@@ -162,8 +162,6 @@ validate_live_stack() {
     "vllm:kv_cache_total_blocks"
   )
   local -a mooncake_metrics=(
-    "mooncake_transfer_read_bytes"
-    "mooncake_transfer_read_operation_count"
     "mooncake_transfer_inflight_read_operations"
     "mooncake_transfer_inflight_read_bytes"
     "mooncake_transfer_read_failures"

@@ -16,6 +16,24 @@ def _backend_url(row: dict[str, Any]) -> str:
     return str(row.get("backend_id", "")).rstrip("/")
 
 
+def _mooncake_read_deltas(run_dir: Path) -> dict[str, dict[str, float]]:
+    by_backend: dict[str, list[dict[str, Any]]] = {}
+    for row in read_jsonl(run_dir / "backend_metrics.jsonl"):
+        if row.get("source") != "mooncake" or row.get("error"):
+            continue
+        by_backend.setdefault(str(row["backend_id"]), []).append(row)
+    deltas = {}
+    for backend, rows in by_backend.items():
+        byte_values = [float(row.get("read_bytes_total", 0)) for row in rows]
+        operation_values = [float(row.get("read_operations_total", 0)) for row in rows]
+        deltas[backend] = {
+            "bytes": max(byte_values, default=0) - min(byte_values, default=0),
+            "operations": max(operation_values, default=0)
+            - min(operation_values, default=0),
+        }
+    return deltas
+
+
 def validate(
     *,
     strict_recompute: Path,
@@ -79,6 +97,25 @@ def validate(
         for value in final_inflight.values()
     ):
         failures.append("Mooncake inflight metrics did not return to zero")
+    l2_read_deltas = {
+        "strict_l2": _mooncake_read_deltas(strict_l2),
+        "adaptive_l2": _mooncake_read_deltas(adaptive_l2),
+    }
+    expected_l2_backends = {
+        "strict_l2": {f"gpu{index}" for index in range(4)},
+        "adaptive_l2": {"gpu0"},
+    }
+    for name, expected in expected_l2_backends.items():
+        observed = {
+            backend
+            for backend, delta in l2_read_deltas[name].items()
+            if delta["bytes"] > 0 and delta["operations"] > 0
+        }
+        if not expected.issubset(observed):
+            failures.append(
+                f"{name} missing positive Mooncake read evidence: "
+                f"expected={sorted(expected)}, observed={sorted(observed)}"
+            )
     return {
         "schema_version": "2.1",
         "scope": "FOUR_H20_FUNCTIONAL_SMOKE_NOT_PERFORMANCE",
@@ -86,6 +123,7 @@ def validate(
         "strict_backend_coverage": sorted(strict_backends),
         "lru_backend_coverage": sorted(target_backends),
         "final_mooncake_inflight": final_inflight,
+        "mooncake_l2_read_deltas": l2_read_deltas,
         "run_validations": validations,
         "failures": failures,
         "passed": not failures,
