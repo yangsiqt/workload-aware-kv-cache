@@ -221,6 +221,7 @@ def _refresh_router_tier(
     expected_path: str,
     run_id: str,
     trace_path: Path,
+    release_file: Path | None = None,
 ) -> None:
     first = f"h20-v21-multitier-refresh-{expected_path}-a-{run_id}"
     second = f"h20-v21-multitier-refresh-{expected_path}-b-{run_id}"
@@ -228,6 +229,9 @@ def _refresh_router_tier(
     time.sleep(1)
     _lookup_only_refresh(item, second)
     _wait_for_router_path(trace_path, second, expected_path)
+    if release_file is not None:
+        release_file.parent.mkdir(parents=True, exist_ok=True)
+        release_file.touch()
     time.sleep(0.5)
 
 

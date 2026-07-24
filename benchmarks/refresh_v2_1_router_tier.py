@@ -20,6 +20,7 @@ def main() -> None:
     )
     parser.add_argument("--trace", type=Path, required=True)
     parser.add_argument("--run-id", required=True)
+    parser.add_argument("--release-file", type=Path)
     parser.add_argument(
         "--model-path",
         type=Path,
@@ -50,6 +51,7 @@ def main() -> None:
         expected_path=args.expected_path,
         run_id=args.run_id,
         trace_path=args.trace,
+        release_file=args.release_file,
     )
 
 

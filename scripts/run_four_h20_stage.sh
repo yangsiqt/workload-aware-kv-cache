@@ -131,7 +131,8 @@ if [[ "$DRY_RUN" == "1" ]]; then
     print_command "${benchmark[@]}"
     echo "DRY-RUN: wait for benchmark client readiness at $START_READY"
     print_command python -m benchmarks.refresh_v2_1_router_tier "$WORKLOAD" \
-      --expected-path "$ROUTER_REFRESH_EXPECTED_PATH" --trace "$RAW_TRACE" --run-id "$RUN_ID"
+      --expected-path "$ROUTER_REFRESH_EXPECTED_PATH" --trace "$RAW_TRACE" --run-id "$RUN_ID" \
+      --release-file "$START_GATE"
     echo "DRY-RUN: release benchmark client with $START_GATE"
     print_command python -m benchmarks.filter_router_trace \
       "$RUN_ROOT/$RUN_ID/requests.jsonl" "$RAW_TRACE" "$TRACE"
@@ -190,8 +191,8 @@ if [[ -n "${ROUTER_REFRESH_EXPECTED_PATH:-}" ]]; then
     "$WORKLOAD" \
     --expected-path "$ROUTER_REFRESH_EXPECTED_PATH" \
     --trace "$RAW_TRACE" \
-    --run-id "$RUN_ID"
-  touch "$START_GATE"
+    --run-id "$RUN_ID" \
+    --release-file "$START_GATE"
   wait "$benchmark_pid"
   benchmark_pid=""
 else
