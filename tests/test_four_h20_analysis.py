@@ -220,7 +220,8 @@ def test_fit_kv_freezes_worker_measured_costs(tmp_path: Path) -> None:
             run_dir / "connector_actual_trace_gpu0.jsonl",
             (
                 {
-                    "event_type": "actual_retrieve",
+                    "event_type": "kv_execution_feedback",
+                    "phase": "load_completed",
                     "request_id": f"r-{index}",
                     "actual_kv_path": path_name,
                     "retrieved_tokens": 1000,

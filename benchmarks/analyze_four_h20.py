@@ -111,17 +111,17 @@ def load_run(label: str, run_dir: Path) -> dict[str, Any]:
             row.get("event_type") == "actual_retrieve"
             or (
                 row.get("event_type") == "kv_execution_feedback"
-                and row.get("phase") == "worker_retrieve"
+                and row.get("phase") in {"worker_retrieve", "load_completed"}
             )
         )
         and str(row.get("request_id", "")) in request_ids
     ]
     actual_paths = Counter(
-        str(row["actual_kv_path"])
-        for row in actual_rows
-        if row.get("actual_kv_path")
+        str(row["actual_kv_path"]) for row in actual_rows if row.get("actual_kv_path")
     )
-    connector_fallbacks = sum(bool(row.get("fallback_reason")) for row in connector_rows)
+    connector_fallbacks = sum(
+        bool(row.get("fallback_reason")) for row in connector_rows
+    )
     manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
     result: dict[str, Any] = {
         "label": label,

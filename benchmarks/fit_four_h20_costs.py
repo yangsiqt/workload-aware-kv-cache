@@ -25,10 +25,10 @@ def _linear_fit(points: list[tuple[float, float]], name: str) -> tuple[float, fl
     denominator = sum((value - mean_x) ** 2 for value in xs)
     if denominator <= 0:
         raise ValueError(f"{name} requires more than one token length")
-    slope = sum(
-        (x_value - mean_x) * (y_value - mean_y)
-        for x_value, y_value in points
-    ) / denominator
+    slope = (
+        sum((x_value - mean_x) * (y_value - mean_y) for x_value, y_value in points)
+        / denominator
+    )
     if slope <= 0:
         raise ValueError(f"{name} measured a non-positive cost slope")
     return max(0.0, mean_y - slope * mean_x), slope
@@ -40,7 +40,8 @@ def _prefill_fit(
     points = [
         (float(row["input_tokens"]), float(row["ttft_ms"]))
         for row in _successful_requests(run_dir)
-        if row.get("ttft_ms") is not None and row.get("input_tokens") is not None
+        if row.get("ttft_ms") is not None
+        and row.get("input_tokens") is not None
         and (required_path is None or row.get("selected_kv_path") == required_path)
     ]
     intercept_ms, slope_ms_per_token = _linear_fit(points, "prefill")
@@ -56,7 +57,7 @@ def _actual_rows(run_dir: Path, path_name: str) -> list[dict[str, Any]]:
             row.get("event_type") == "actual_retrieve"
             or (
                 row.get("event_type") == "kv_execution_feedback"
-                and row.get("phase") == "worker_retrieve"
+                and row.get("phase") in {"worker_retrieve", "load_completed"}
             )
         )
         and row.get("actual_kv_path") == path_name
@@ -70,8 +71,7 @@ def _tier_rate(run_dir: Path, path_name: str) -> tuple[float, int]:
     if not rows:
         raise ValueError(f"no worker-observed {path_name} retrievals in {run_dir}")
     rates = [
-        1000.0 * int(row["retrieved_tokens"]) / float(row["load_ms"])
-        for row in rows
+        1000.0 * int(row["retrieved_tokens"]) / float(row["load_ms"]) for row in rows
     ]
     return statistics.median(rates), len(rows)
 
@@ -113,7 +113,9 @@ def fit_kv(
             "lmcache_l1": l1_samples,
             "mooncake_l2": l2_samples,
         },
-        "source_runs": [str(path.resolve()) for path in (recompute_run, l1_run, l2_run)],
+        "source_runs": [
+            str(path.resolve()) for path in (recompute_run, l1_run, l2_run)
+        ],
         "frozen_config": str(output_config.resolve()),
         "frozen_config_sha256": sha256_file(output_config),
     }
