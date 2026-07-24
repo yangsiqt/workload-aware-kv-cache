@@ -33,11 +33,15 @@ VLLM_METRICS = {
 
 MOONCAKE_METRICS = {
     "mooncake_transfer_read_bytes": "read_bytes_total",
+    "mooncake_transfer_read_bytes_total": "read_bytes_total",
     "mooncake_transfer_read_operation_count": "read_operations_total",
+    "mooncake_transfer_read_operation_count_total": "read_operations_total",
     "mooncake_transfer_inflight_read_operations": "inflight_read_operations",
     "mooncake_transfer_inflight_read_bytes": "inflight_read_bytes",
     "mooncake_transfer_read_failures": "read_failures_total",
+    "mooncake_transfer_read_failures_total": "read_failures_total",
     "mooncake_transfer_read_misses": "read_misses_total",
+    "mooncake_transfer_read_misses_total": "read_misses_total",
 }
 
 
@@ -49,7 +53,9 @@ def parse_metrics(
     for family in text_string_to_metric_families(text):
         for sample in family.samples:
             if sample.name in selected:
-                values[selected[sample.name]] = float(sample.value)
+                # A Mooncake family may contain one sample per interface label.
+                # Sum matching samples instead of keeping only the last label.
+                values[selected[sample.name]] += float(sample.value)
     return values
 
 

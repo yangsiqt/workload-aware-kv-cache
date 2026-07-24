@@ -67,6 +67,31 @@ mooncake_transfer_read_misses 4
     }
 
 
+def test_parse_typed_labeled_mooncake_counters() -> None:
+    values = parse_metrics(
+        """
+# HELP mooncake_transfer_read_bytes Total bytes read
+# TYPE mooncake_transfer_read_bytes counter
+mooncake_transfer_read_bytes{client_mode="real"} 1024
+# HELP mooncake_transfer_read_operation_count Total read operations
+# TYPE mooncake_transfer_read_operation_count counter
+mooncake_transfer_read_operation_count{op_name="get_into"} 2
+mooncake_transfer_read_operation_count{op_name="batch_get_into"} 3
+# HELP mooncake_transfer_read_failures Total failures
+# TYPE mooncake_transfer_read_failures counter
+mooncake_transfer_read_failures 1
+# HELP mooncake_transfer_read_misses Total misses
+# TYPE mooncake_transfer_read_misses counter
+mooncake_transfer_read_misses 4
+""",
+        MOONCAKE_METRICS,
+    )
+    assert values["read_bytes_total"] == 1024
+    assert values["read_operations_total"] == 5
+    assert values["read_failures_total"] == 1
+    assert values["read_misses_total"] == 4
+
+
 def test_dual_analysis_counts_migrations_and_metric_deltas(tmp_path: Path) -> None:
     requests = tmp_path / "requests.jsonl"
     requests.write_text(
