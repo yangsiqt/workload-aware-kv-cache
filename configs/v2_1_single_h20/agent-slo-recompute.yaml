@@ -1,0 +1,16 @@
+policy_level: P-R3
+prefill_tokens_per_s: 6118.98
+prefill_intercept_ms: 0.0
+external_enabled: true
+kv_policy: recompute
+kv_fixed_min_retrieve_tokens: 0
+cache_tier_controller_url: http://127.0.0.1:9000
+cache_tier_tokenizer_path: /root/autodl-fs/models/Qwen3-30B-A3B-Instruct-2507
+cache_tier_lookup_timeout_s: 0.5
+cache_tier_lookup_workers: 1
+cache_tier_stale_after_s: 5.0
+cache_instance_backend_map:
+  v2-1-single-h20: http://127.0.0.1:8000
+v2_lifecycle_path: /root/log/workload-aware-kv-cache/v2-1-single-h20/serving/backend.connector-trace.jsonl
+pd_enabled: false
+pd_policy: disabled

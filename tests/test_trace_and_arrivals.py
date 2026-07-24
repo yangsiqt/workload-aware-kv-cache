@@ -446,6 +446,48 @@ def test_trace_join_v2_1_rejects_selected_actual_mismatch(tmp_path: Path) -> Non
         join(client, router, tmp_path / "joined.jsonl", [worker])
 
 
+def test_trace_join_v2_1_allows_explicit_external_miss_fallback(
+    tmp_path: Path,
+) -> None:
+    client = tmp_path / "client.jsonl"
+    router = tmp_path / "router.jsonl"
+    worker = tmp_path / "worker.jsonl"
+    output = tmp_path / "joined.jsonl"
+    decision = route_event("request", "decision")
+    completion = route_event("request", "completion", True)
+    for row in (decision, completion):
+        row["schema_version"] = "2.1"
+        row["backend_url"] = "http://backend-0"
+        row["kv_path"] = {"selected_path": "lmcache_l1"}
+    common = {
+        "schema_version": "2.1",
+        "event_type": "kv_execution_feedback",
+        "request_id": "request",
+        "attempt_id": "0",
+        "decision_id": "request:0",
+        "backend_id": "http://backend-0",
+        "selected_path": "lmcache_l1",
+        "actual_kv_path": "local_hbm",
+        "fallback_reason": "external_miss",
+        "terminal": False,
+    }
+    events = [
+        {**common, "phase": "scheduler_seen", "recorded_at": 1.1},
+        {**common, "phase": "lookup_completed", "recorded_at": 1.2},
+        {
+            **common,
+            "phase": "request_finished",
+            "recorded_at": 1.3,
+            "terminal": True,
+        },
+    ]
+    write_jsonl(client, [request_result("request")])
+    write_jsonl(router, [decision, completion])
+    write_jsonl(worker, events)
+
+    assert join(client, router, output, [worker]) == 1
+
+
 def test_environment_log_file_can_be_overridden(tmp_path: Path) -> None:
     log = tmp_path / "environment.log"
     result = subprocess.run(

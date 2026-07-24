@@ -4,12 +4,17 @@ set -euo pipefail
 ACTION="${1:-}"
 ROOT="${PROJECT_ROOT:-/root/workload-aware-kv-cache}"
 MODEL="${MODEL_PATH:-/root/autodl-fs/models/Qwen3-0.6B}"
+MODEL_NAME="${SMOKE_MODEL_NAME:-Qwen3-0.6B}"
 WORKER_PYTHON="${KV_WORKER_PYTHON:-/root/.venvs/kv-worker/bin/python}"
 ROUTER="${ROUTER_BIN:-/root/.venvs/vllm-router/bin/vllm-router}"
 MOONCAKE_MASTER="/root/.venvs/kv-worker/lib/python3.12/site-packages/mooncake/mooncake_master"
 LOG_ROOT="${V2_LITE_LOG_ROOT:-/root/log/workload-aware-kv-cache/v2-lite-2080ti}"
 PID_DIR="$LOG_ROOT/pids"
 MAX_NUM_SEQS="${SMOKE_MAX_NUM_SEQS:-1}"
+MAX_MODEL_LEN="${SMOKE_MAX_MODEL_LEN:-8192}"
+GPU_MEMORY_UTILIZATION="${SMOKE_GPU_MEMORY_UTILIZATION:-0.85}"
+MODEL_DTYPE="${SMOKE_MODEL_DTYPE:-half}"
+ENFORCE_EAGER="${SMOKE_ENFORCE_EAGER:-1}"
 LMCACHE_CONFIG="${SMOKE_LMCACHE_CONFIG:-$ROOT/configs/v2_lite/lmcache-2080ti.yaml}"
 ROUTER_CONFIG="${SMOKE_ROUTER_CONFIG:-$ROOT/configs/v2_lite/agent-slo-2080ti.yaml}"
 LMCACHE_INSTANCE_ID="${SMOKE_LMCACHE_INSTANCE_ID:-v2-lite-2080ti}"
@@ -92,7 +97,8 @@ start_all() {
   stop_all
   for trace in \
     "$LOG_ROOT/serving/backend.connector-trace.jsonl" \
-    "$LOG_ROOT/serving/backend.connector-actual-trace.jsonl"
+    "$LOG_ROOT/serving/backend.connector-actual-trace.jsonl" \
+    "$LOG_ROOT/routing/router-trace.jsonl"
   do
     if [[ -f "$trace" ]]; then
       mv "$trace" "$trace.previous.$(date -u +%Y%m%dT%H%M%SZ)"
@@ -110,18 +116,23 @@ start_all() {
     --monitor-ports '{"pull":9101,"reply":9102,"heartbeat":9103}'
   wait_http lmcache-controller http://127.0.0.1:9000/
 
+  local vllm_args=(
+    "$WORKER_PYTHON" -m vllm.entrypoints.cli.main serve "$MODEL"
+    --served-model-name "$MODEL_NAME" --host 127.0.0.1 --port 8000
+    --dtype "$MODEL_DTYPE" --max-model-len "$MAX_MODEL_LEN"
+    --max-num-seqs "$MAX_NUM_SEQS"
+    --gpu-memory-utilization "$GPU_MEMORY_UTILIZATION"
+    --enable-prefix-caching --enable-chunked-prefill
+    --kv-transfer-config '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'
+  )
+  [[ "$ENFORCE_EAGER" == 1 ]] && vllm_args+=(--enforce-eager)
   start_process backend env \
     CUDA_VISIBLE_DEVICES=0 \
     LMCACHE_CONFIG_FILE="$LMCACHE_CONFIG" \
     LMCACHE_WORKLOAD_AWARE_TRACE_PATH="$LOG_ROOT/serving/backend.connector-trace.jsonl" \
     LMCACHE_WORKLOAD_AWARE_ACTUAL_TRACE_PATH="$LOG_ROOT/serving/backend.connector-actual-trace.jsonl" \
     VLLM_SERVER_DEV_MODE=1 PYTHONHASHSEED=123 \
-    "$WORKER_PYTHON" -m vllm.entrypoints.cli.main serve "$MODEL" \
-    --served-model-name Qwen3-0.6B --host 127.0.0.1 --port 8000 \
-    --dtype half --max-model-len 8192 --max-num-seqs "$MAX_NUM_SEQS" \
-    --gpu-memory-utilization 0.85 --enable-prefix-caching \
-    --enable-chunked-prefill --enforce-eager \
-    --kv-transfer-config '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'
+    "${vllm_args[@]}"
   wait_http backend http://127.0.0.1:8000/v1/models
 
   if grep -q 'enable_client_http_server: true' "$LMCACHE_CONFIG"; then
@@ -138,7 +149,7 @@ start_router() {
     --host 127.0.0.1 --port 9003 \
     --service-discovery static \
     --static-backends http://127.0.0.1:8000 \
-    --static-models Qwen3-0.6B \
+    --static-models "$MODEL_NAME" \
     --static-model-labels monolithic \
     --routing-logic agent_slo_aware \
     --engine-stats-interval 0.25 \

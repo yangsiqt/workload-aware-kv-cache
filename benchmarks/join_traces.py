@@ -68,7 +68,14 @@ def _validate_successful_final_attempt(attempt: RouteAttempt) -> None:
     load_completed = [row for row in events if row.get("phase") == "load_completed"]
     if selected in {"lmcache_l1", "mooncake_l2"}:
         if not load_completed:
-            raise ValueError(f"{label} requires at least one load_completed event")
+            terminal = terminals[0]
+            actual = str(terminal.get("actual_kv_path", ""))
+            fallback_reason = str(terminal.get("fallback_reason", ""))
+            if actual not in {"local_hbm", "recompute"} or not fallback_reason:
+                raise ValueError(
+                    f"{label} requires a load_completed event or explicit "
+                    "Local HBM/Recompute fallback"
+                )
         for event in load_completed:
             actual = str(event.get("actual_kv_path", ""))
             if event.get("path_mismatch") or actual != selected:
