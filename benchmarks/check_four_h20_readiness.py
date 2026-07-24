@@ -16,10 +16,19 @@ ROOT = Path("/root/workload-aware-kv-cache")
 DATA = Path("/root/workload-aware-kv-cache-data/processed/four_h20")
 TRACES = Path("/root/workload-aware-kv-cache-data/traces/four_h20")
 V2_1_WHEELS = Path("/root/wheels/workload-aware-kv-cache/v2-1")
+MULTITIER_REPORT = Path(
+    os.environ.get(
+        "V2_1_MULTITIER_REPORT",
+        "/root/workload-aware-kv-cache-data/runs/single_h20_v2_1_multitier/"
+        "20260724T1628Z-h20-v21-multitier-lru-r1/report.json",
+    )
+)
 
 
 def _wheel_from_manifest(path: Path) -> tuple[str, Path]:
-    expected_sha, wheel_path = path.read_text(encoding="utf-8").strip().split(maxsplit=1)
+    expected_sha, wheel_path = (
+        path.read_text(encoding="utf-8").strip().split(maxsplit=1)
+    )
     return expected_sha, Path(wheel_path)
 
 
@@ -56,11 +65,19 @@ def inspect() -> dict[str, Any]:
         turns_valid &= sorted(item.turn_id for item in values) == list(range(6))
     check("formal_workload_rows", len(request_ids) == 1200, len(request_ids))
     check("formal_sessions", len(sessions) == 200, len(sessions))
-    check("formal_prefix_tiers", dict(tiers) == {8192: 67, 16384: 67, 32768: 66}, dict(tiers))
+    check(
+        "formal_prefix_tiers",
+        dict(tiers) == {8192: 67, 16384: 67, 32768: 66},
+        dict(tiers),
+    )
     check("six_serial_turns", turns_valid, "turn_id 0..5 per session")
     check(
         "prompt_limit",
-        all(item.prompt_tokens <= 40960 for values in sessions.values() for item in values),
+        all(
+            item.prompt_tokens <= 40960
+            for values in sessions.values()
+            for item in values
+        ),
         "max_model_len=40960",
     )
     model_path = Path("/root/autodl-fs/models/Qwen3-30B-A3B-Instruct-2507")
@@ -92,7 +109,10 @@ def inspect() -> dict[str, Any]:
     }
     check(
         "five_profiles",
-        all(observed_profiles.get(name) == rows for name, rows in required_profiles.items()),
+        all(
+            observed_profiles.get(name) == rows
+            for name, rows in required_profiles.items()
+        ),
         observed_profiles,
     )
     profile_hashes_valid = all(
@@ -208,15 +228,14 @@ def inspect() -> dict[str, Any]:
         ROOT / "benchmarks" / "fit_four_h20_costs.py",
         ROOT / "benchmarks" / "validate_four_h20_run.py",
         ROOT / "benchmarks" / "smoke_v2_1_2080ti.py",
+        ROOT / "benchmarks" / "single_h20_v2_1_multitier.py",
     ]
     check(
         "measured_cost_and_runtime_gates",
         all(path.is_file() for path in support_modules),
         [str(path) for path in support_modules],
     )
-    stack_source = (ROOT / "scripts" / "four_h20_stack.sh").read_text(
-        encoding="utf-8"
-    )
+    stack_source = (ROOT / "scripts" / "four_h20_stack.sh").read_text(encoding="utf-8")
     check(
         "pd_mooncake_tcp",
         stack_source.count('"mooncake_protocol":"tcp"') == 2,
@@ -238,6 +257,36 @@ def inspect() -> dict[str, Any]:
             "run_id": smoke_report.get("run_id"),
         },
     )
+    multitier_report = json.loads(MULTITIER_REPORT.read_text(encoding="utf-8"))
+    expected_paths = {
+        "h20-v21-multitier-adaptive-lmcache_l1-0": "lmcache_l1",
+        "h20-v21-multitier-adaptive-lmcache_l1-1": "lmcache_l1",
+        "h20-v21-multitier-adaptive-mooncake_l2-0": "mooncake_l2",
+    }
+    snapshots = multitier_report.get("controller_snapshots", {})
+    before_lru = snapshots.get("before_lru", {}).get("by_location", {})
+    after_lru = snapshots.get("after_lru", {}).get("by_location", {})
+    check(
+        "v2_1_single_h20_multitier_lru_smoke",
+        multitier_report.get("passed") is True
+        and multitier_report.get("status") == "PASS"
+        and multitier_report.get("scope")
+        == "SINGLE_H20_MULTI_TIER_ADAPTIVE_FUNCTIONAL_SMOKE_NOT_FOUR_H20_PERFORMANCE"
+        and multitier_report.get("success_rate") == 1.0
+        and multitier_report.get("adaptive_selected_paths") == expected_paths
+        and multitier_report.get("adaptive_actual_paths") == expected_paths
+        and before_lru.get("LocalCPUBackend", 0) >= 8192
+        and before_lru.get("RemoteBackend", 0) >= 8192
+        and after_lru.get("LocalCPUBackend", 0) == 0
+        and after_lru.get("RemoteBackend", 0) >= 8192,
+        {
+            "path": str(MULTITIER_REPORT),
+            "scope": multitier_report.get("scope"),
+            "run_id": multitier_report.get("run_id"),
+            "before_lru": before_lru,
+            "after_lru": after_lru,
+        },
+    )
 
     repositories = {
         "project": _git_state(ROOT),
@@ -255,7 +304,10 @@ def inspect() -> dict[str, Any]:
     }
     check(
         "feature_branches",
-        all(repositories[name]["branch"] == branch for name, branch in expected_branches.items()),
+        all(
+            repositories[name]["branch"] == branch
+            for name, branch in expected_branches.items()
+        ),
         repositories,
     )
     check(
@@ -269,8 +321,9 @@ def inspect() -> dict[str, Any]:
         "schema_version": "2.1",
         "status": "READY FOR 4×H20 VALIDATION" if ready else "NOT READY",
         "scope": (
-            "V2.1 source, wheels, scripts and 2080 Ti functional smoke are ready; "
-            "four-H20 topology and performance validation remain pending"
+            "V2.1 source, wheels, scripts, 2080 Ti smoke and single-H20 "
+            "multi-tier LRU smoke are ready; four-H20 topology and performance "
+            "validation remain pending"
         ),
         "checks": checks,
         "repositories": repositories,
@@ -296,9 +349,10 @@ def write_markdown(report: dict[str, Any], path: Path) -> None:
         [
             "",
             "This status means the data, code, dual-architecture wheels, dry-run "
-            "orchestration and 2080 Ti functional L1/L2 evidence are prepared. Real "
-            "four-backend topology and performance validation remain mandatory on "
-            "4×H20 and cannot be claimed from this host.",
+            "orchestration, 2080 Ti strict-path evidence and single-H20 Adaptive "
+            "multi-tier LRU evidence are prepared. Real four-backend topology and "
+            "performance validation remain mandatory on 4×H20 and cannot be "
+            "claimed from this host.",
         ]
     )
     path.parent.mkdir(parents=True, exist_ok=True)
