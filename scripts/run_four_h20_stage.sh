@@ -35,6 +35,9 @@ REQUIRE_ACTUAL_KV_PATHS="${REQUIRE_ACTUAL_KV_PATHS:-}"
 REQUIRE_EXECUTION_MODES="${REQUIRE_EXECUTION_MODES:-}"
 REQUIRE_V2_1_WORKER_LIFECYCLE="${REQUIRE_V2_1_WORKER_LIFECYCLE:-false}"
 metrics_pid=""
+benchmark_pid=""
+START_READY="$LOG_ROOT/benchmark/$RUN_ID.client-ready"
+START_GATE="$LOG_ROOT/benchmark/$RUN_ID.client-gate"
 declare -a connector_offsets actual_offsets
 
 prepare_router_trace() {
@@ -87,6 +90,10 @@ cleanup() {
     kill -TERM "$metrics_pid" 2>/dev/null || true
     wait "$metrics_pid" 2>/dev/null || true
   fi
+  if [[ -n "$benchmark_pid" ]] && kill -0 "$benchmark_pid" 2>/dev/null; then
+    kill -TERM "$benchmark_pid" 2>/dev/null || true
+    wait "$benchmark_pid" 2>/dev/null || true
+  fi
 }
 trap cleanup EXIT INT TERM
 
@@ -104,6 +111,13 @@ benchmark=(
 if [[ -n "$ARRIVAL_TRACE" ]]; then
   benchmark+=(--arrival-trace "$ARRIVAL_TRACE")
 fi
+if [[ -n "${ROUTER_REFRESH_EXPECTED_PATH:-}" ]]; then
+  benchmark+=(
+    --start-ready-file "$START_READY"
+    --start-gate-file "$START_GATE"
+    --start-gate-timeout-s 60
+  )
+fi
 
 if [[ "$DRY_RUN" == "1" ]]; then
   FOUR_H20_ROUTER_TRACE="$RAW_TRACE" "$STACK" --dry-run router "$ROUTER_CONFIG" "$TOPOLOGY"
@@ -114,12 +128,16 @@ if [[ "$DRY_RUN" == "1" ]]; then
     --mooncake gpu0=http://127.0.0.1:9300 --mooncake gpu1=http://127.0.0.1:9301 \
     --mooncake gpu2=http://127.0.0.1:9302 --mooncake gpu3=http://127.0.0.1:9303
   if [[ -n "${ROUTER_REFRESH_EXPECTED_PATH:-}" ]]; then
+    print_command "${benchmark[@]}"
+    echo "DRY-RUN: wait for benchmark client readiness at $START_READY"
     print_command python -m benchmarks.refresh_v2_1_router_tier "$WORKLOAD" \
       --expected-path "$ROUTER_REFRESH_EXPECTED_PATH" --trace "$RAW_TRACE" --run-id "$RUN_ID"
+    echo "DRY-RUN: release benchmark client with $START_GATE"
     print_command python -m benchmarks.filter_router_trace \
       "$RUN_ROOT/$RUN_ID/requests.jsonl" "$RAW_TRACE" "$TRACE"
+  else
+    print_command "${benchmark[@]}"
   fi
-  print_command "${benchmark[@]}"
   print_command join_command
   print_command validate_command
   exit 0
@@ -130,15 +148,9 @@ if [[ -d "$RUN_ROOT/$RUN_ID" ]]; then
   mv "$RUN_ROOT/$RUN_ID" "$RUN_ROOT/$RUN_ID.incomplete.$(date -u +%Y%m%dT%H%M%SZ)"
 fi
 rm -f "$TRACE" "$RAW_TRACE" "$METRICS"
+rm -f "$START_READY" "$START_GATE"
 FOUR_H20_ROUTER_TRACE="$RAW_TRACE" "$STACK" router "$ROUTER_CONFIG" "$TOPOLOGY"
 "$STACK" reset
-if [[ -n "${ROUTER_REFRESH_EXPECTED_PATH:-}" ]]; then
-  python -m benchmarks.refresh_v2_1_router_tier \
-    "$WORKLOAD" \
-    --expected-path "$ROUTER_REFRESH_EXPECTED_PATH" \
-    --trace "$RAW_TRACE" \
-    --run-id "$RUN_ID"
-fi
 for gpu in 0 1 2 3; do
   connector_trace="$LOG_ROOT/serving/backend-$gpu.connector-trace.jsonl"
   actual_trace="$LOG_ROOT/serving/backend-$gpu.connector-actual-trace.jsonl"
@@ -158,7 +170,33 @@ python -m benchmarks.sample_backend_metrics \
   --output "$METRICS" --interval 0.25 &
 metrics_pid=$!
 
-(cd "$PROJECT_ROOT" && "${benchmark[@]}")
+if [[ -n "${ROUTER_REFRESH_EXPECTED_PATH:-}" ]]; then
+  (cd "$PROJECT_ROOT" && "${benchmark[@]}") &
+  benchmark_pid=$!
+  for _ in $(seq 1 600); do
+    [[ -f "$START_READY" ]] && break
+    kill -0 "$benchmark_pid" 2>/dev/null || {
+      wait "$benchmark_pid"
+      echo "benchmark client exited before the start gate" >&2
+      exit 1
+    }
+    sleep 0.1
+  done
+  [[ -f "$START_READY" ]] || {
+    echo "timeout waiting for benchmark client readiness" >&2
+    exit 1
+  }
+  python -m benchmarks.refresh_v2_1_router_tier \
+    "$WORKLOAD" \
+    --expected-path "$ROUTER_REFRESH_EXPECTED_PATH" \
+    --trace "$RAW_TRACE" \
+    --run-id "$RUN_ID"
+  touch "$START_GATE"
+  wait "$benchmark_pid"
+  benchmark_pid=""
+else
+  (cd "$PROJECT_ROOT" && "${benchmark[@]}")
+fi
 cleanup
 metrics_pid=""
 sleep 1

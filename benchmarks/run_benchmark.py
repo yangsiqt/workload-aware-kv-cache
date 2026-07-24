@@ -183,6 +183,24 @@ async def _request(
     )
 
 
+async def _wait_for_start_gate(
+    start_gate: Path | None,
+    ready: Path | None,
+    timeout_s: float,
+) -> None:
+    if not start_gate:
+        return
+    if not ready:
+        raise ValueError("--start-ready-file is required with --start-gate-file")
+    ready.parent.mkdir(parents=True, exist_ok=True)
+    ready.touch()
+    deadline = time.monotonic() + timeout_s
+    while not start_gate.exists():
+        if time.monotonic() >= deadline:
+            raise TimeoutError(f"timed out waiting for start gate: {start_gate}")
+        await asyncio.sleep(0.05)
+
+
 async def run(args: argparse.Namespace) -> Path:
     config = load_yaml(args.config)
     items = [WorkloadItem.model_validate(row) for row in read_jsonl(args.workload)]
@@ -198,6 +216,11 @@ async def run(args: argparse.Namespace) -> Path:
     connector = aiohttp.TCPConnector(**connector_options(config))
     semaphore = asyncio.Semaphore(args.concurrency)
     results: list[RequestResult] = []
+    await _wait_for_start_gate(
+        getattr(args, "start_gate_file", None),
+        getattr(args, "start_ready_file", None),
+        float(getattr(args, "start_gate_timeout_s", 60.0)),
+    )
     origin = time.perf_counter()
 
     by_session: dict[str, list[WorkloadItem]] = defaultdict(list)
@@ -344,6 +367,9 @@ def main() -> None:
     parser.add_argument("--router-config", type=Path)
     parser.add_argument("--launch-command")
     parser.add_argument("--simulated", action="store_true")
+    parser.add_argument("--start-ready-file", type=Path)
+    parser.add_argument("--start-gate-file", type=Path)
+    parser.add_argument("--start-gate-timeout-s", type=float, default=60.0)
     args = parser.parse_args()
     if args.concurrency < 1 or args.request_rate <= 0:
         parser.error("concurrency and request-rate must be positive")
