@@ -24,6 +24,10 @@ RUN_ROOT="${RUN_ROOT:-/root/workload-aware-kv-cache-data/runs/four_h20}"
 LOG_ROOT="${FOUR_H20_LOG_ROOT:-/root/log/workload-aware-kv-cache/four-h20}"
 STACK="$PROJECT_ROOT/scripts/four_h20_stack.sh"
 TRACE="$LOG_ROOT/routing/$RUN_ID.trace.jsonl"
+RAW_TRACE="$TRACE"
+if [[ -n "${ROUTER_REFRESH_EXPECTED_PATH:-}" ]]; then
+  RAW_TRACE="$LOG_ROOT/routing/$RUN_ID.raw-trace.jsonl"
+fi
 METRICS="$LOG_ROOT/benchmark/$RUN_ID.metrics.jsonl"
 MIN_SUCCESS_RATE="${MIN_SUCCESS_RATE:-0.99}"
 REQUIRE_SELECTED_KV_PATHS="${REQUIRE_SELECTED_KV_PATHS:-}"
@@ -33,7 +37,15 @@ REQUIRE_V2_1_WORKER_LIFECYCLE="${REQUIRE_V2_1_WORKER_LIFECYCLE:-false}"
 metrics_pid=""
 declare -a connector_offsets actual_offsets
 
+prepare_router_trace() {
+  if [[ "$RAW_TRACE" != "$TRACE" ]]; then
+    python -m benchmarks.filter_router_trace \
+      "$RUN_ROOT/$RUN_ID/requests.jsonl" "$RAW_TRACE" "$TRACE"
+  fi
+}
+
 join_command() {
+  prepare_router_trace
   local -a command=(
     python -m benchmarks.join_traces
     "$RUN_ROOT/$RUN_ID/requests.jsonl" "$TRACE"
@@ -94,7 +106,7 @@ if [[ -n "$ARRIVAL_TRACE" ]]; then
 fi
 
 if [[ "$DRY_RUN" == "1" ]]; then
-  FOUR_H20_ROUTER_TRACE="$TRACE" "$STACK" --dry-run router "$ROUTER_CONFIG" "$TOPOLOGY"
+  FOUR_H20_ROUTER_TRACE="$RAW_TRACE" "$STACK" --dry-run router "$ROUTER_CONFIG" "$TOPOLOGY"
   "$STACK" --dry-run reset
   print_command python -m benchmarks.sample_backend_metrics --output "$METRICS" --interval 0.25 \
     --backend gpu0=http://127.0.0.1:8000 --backend gpu1=http://127.0.0.1:8001 \
@@ -103,7 +115,9 @@ if [[ "$DRY_RUN" == "1" ]]; then
     --mooncake gpu2=http://127.0.0.1:9302 --mooncake gpu3=http://127.0.0.1:9303
   if [[ -n "${ROUTER_REFRESH_EXPECTED_PATH:-}" ]]; then
     print_command python -m benchmarks.refresh_v2_1_router_tier "$WORKLOAD" \
-      --expected-path "$ROUTER_REFRESH_EXPECTED_PATH" --trace "$TRACE" --run-id "$RUN_ID"
+      --expected-path "$ROUTER_REFRESH_EXPECTED_PATH" --trace "$RAW_TRACE" --run-id "$RUN_ID"
+    print_command python -m benchmarks.filter_router_trace \
+      "$RUN_ROOT/$RUN_ID/requests.jsonl" "$RAW_TRACE" "$TRACE"
   fi
   print_command "${benchmark[@]}"
   print_command join_command
@@ -115,16 +129,15 @@ mkdir -p "$RUN_ROOT" "$LOG_ROOT/routing" "$LOG_ROOT/benchmark"
 if [[ -d "$RUN_ROOT/$RUN_ID" ]]; then
   mv "$RUN_ROOT/$RUN_ID" "$RUN_ROOT/$RUN_ID.incomplete.$(date -u +%Y%m%dT%H%M%SZ)"
 fi
-rm -f "$TRACE" "$METRICS"
-FOUR_H20_ROUTER_TRACE="$TRACE" "$STACK" router "$ROUTER_CONFIG" "$TOPOLOGY"
+rm -f "$TRACE" "$RAW_TRACE" "$METRICS"
+FOUR_H20_ROUTER_TRACE="$RAW_TRACE" "$STACK" router "$ROUTER_CONFIG" "$TOPOLOGY"
 "$STACK" reset
 if [[ -n "${ROUTER_REFRESH_EXPECTED_PATH:-}" ]]; then
   python -m benchmarks.refresh_v2_1_router_tier \
     "$WORKLOAD" \
     --expected-path "$ROUTER_REFRESH_EXPECTED_PATH" \
-    --trace "$TRACE" \
+    --trace "$RAW_TRACE" \
     --run-id "$RUN_ID"
-  rm -f "$TRACE"
 fi
 for gpu in 0 1 2 3; do
   connector_trace="$LOG_ROOT/serving/backend-$gpu.connector-trace.jsonl"

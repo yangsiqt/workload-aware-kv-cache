@@ -265,6 +265,7 @@ def inspect() -> dict[str, Any]:
         ROOT / "benchmarks" / "record_v2_1_four_h20.py",
         ROOT / "benchmarks" / "refresh_v2_1_router_tier.py",
         ROOT / "benchmarks" / "validate_v2_1_k01.py",
+        ROOT / "benchmarks" / "filter_router_trace.py",
     ]
     check(
         "measured_cost_and_runtime_gates",
