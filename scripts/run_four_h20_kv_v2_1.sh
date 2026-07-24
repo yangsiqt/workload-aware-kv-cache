@@ -271,7 +271,8 @@ if should_run K01; then
       run_stage "$run" kv "$ADAPTIVE_TEMPLATE" "$target" closed_loop 1
   done
   f="V21K01F-lru-fillers-$TAG"; CURRENT_RUNS+=("$f")
-  RESET_EXTERNAL=false MIN_SUCCESS_RATE=1 REQUIRE_V2_1_WORKER_LIFECYCLE=true \
+  RESET_EXTERNAL=false BENCHMARK_INTER_REQUEST_DELAY_S=1 \
+    MIN_SUCCESS_RATE=1 REQUIRE_V2_1_WORKER_LIFECYCLE=true \
     REQUIRE_SELECTED_KV_PATHS=recompute \
     run_stage "$f" kv "$ROOT/configs/four_h20/agent-slo-kv-recompute.yaml" "$fillers" closed_loop 1
   g="V21K01G-adaptive-l2-$TAG"; CURRENT_RUNS+=("$g")

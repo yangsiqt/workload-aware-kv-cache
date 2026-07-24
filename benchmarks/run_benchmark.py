@@ -245,6 +245,10 @@ async def run(args: argparse.Namespace) -> Path:
                     offered_at=offered,
                 )
                 results.append(result)
+                if args.inter_request_delay_s > 0:
+                    # Hold the concurrency slot so a functional smoke can wait
+                    # for the next Backend metrics sample before routing again.
+                    await asyncio.sleep(args.inter_request_delay_s)
 
         if args.mode == "closed_loop":
 
@@ -370,9 +374,13 @@ def main() -> None:
     parser.add_argument("--start-ready-file", type=Path)
     parser.add_argument("--start-gate-file", type=Path)
     parser.add_argument("--start-gate-timeout-s", type=float, default=60.0)
+    parser.add_argument("--inter-request-delay-s", type=float, default=0.0)
     args = parser.parse_args()
-    if args.concurrency < 1 or args.request_rate <= 0:
-        parser.error("concurrency and request-rate must be positive")
+    if args.concurrency < 1 or args.request_rate <= 0 or args.inter_request_delay_s < 0:
+        parser.error(
+            "concurrency and request-rate must be positive; "
+            "inter-request-delay must be non-negative"
+        )
     print(asyncio.run(run(args)))
 
 

@@ -111,6 +111,9 @@ benchmark=(
 if [[ -n "$ARRIVAL_TRACE" ]]; then
   benchmark+=(--arrival-trace "$ARRIVAL_TRACE")
 fi
+if [[ -n "${BENCHMARK_INTER_REQUEST_DELAY_S:-}" ]]; then
+  benchmark+=(--inter-request-delay-s "$BENCHMARK_INTER_REQUEST_DELAY_S")
+fi
 if [[ -n "${ROUTER_REFRESH_EXPECTED_PATH:-}" ]]; then
   benchmark+=(
     --start-ready-file "$START_READY"
