@@ -98,7 +98,13 @@ if [[ "$DRY_RUN" == "1" ]]; then
   "$STACK" --dry-run reset
   print_command python -m benchmarks.sample_backend_metrics --output "$METRICS" --interval 0.25 \
     --backend gpu0=http://127.0.0.1:8000 --backend gpu1=http://127.0.0.1:8001 \
-    --backend gpu2=http://127.0.0.1:8002 --backend gpu3=http://127.0.0.1:8003
+    --backend gpu2=http://127.0.0.1:8002 --backend gpu3=http://127.0.0.1:8003 \
+    --mooncake gpu0=http://127.0.0.1:9300 --mooncake gpu1=http://127.0.0.1:9301 \
+    --mooncake gpu2=http://127.0.0.1:9302 --mooncake gpu3=http://127.0.0.1:9303
+  if [[ -n "${ROUTER_REFRESH_EXPECTED_PATH:-}" ]]; then
+    print_command python -m benchmarks.refresh_v2_1_router_tier "$WORKLOAD" \
+      --expected-path "$ROUTER_REFRESH_EXPECTED_PATH" --trace "$TRACE" --run-id "$RUN_ID"
+  fi
   print_command "${benchmark[@]}"
   print_command join_command
   print_command validate_command
@@ -112,6 +118,14 @@ fi
 rm -f "$TRACE" "$METRICS"
 FOUR_H20_ROUTER_TRACE="$TRACE" "$STACK" router "$ROUTER_CONFIG" "$TOPOLOGY"
 "$STACK" reset
+if [[ -n "${ROUTER_REFRESH_EXPECTED_PATH:-}" ]]; then
+  python -m benchmarks.refresh_v2_1_router_tier \
+    "$WORKLOAD" \
+    --expected-path "$ROUTER_REFRESH_EXPECTED_PATH" \
+    --trace "$TRACE" \
+    --run-id "$RUN_ID"
+  rm -f "$TRACE"
+fi
 for gpu in 0 1 2 3; do
   connector_trace="$LOG_ROOT/serving/backend-$gpu.connector-trace.jsonl"
   actual_trace="$LOG_ROOT/serving/backend-$gpu.connector-actual-trace.jsonl"
@@ -124,6 +138,10 @@ python -m benchmarks.sample_backend_metrics \
   --backend gpu1=http://127.0.0.1:8001 \
   --backend gpu2=http://127.0.0.1:8002 \
   --backend gpu3=http://127.0.0.1:8003 \
+  --mooncake gpu0=http://127.0.0.1:9300 \
+  --mooncake gpu1=http://127.0.0.1:9301 \
+  --mooncake gpu2=http://127.0.0.1:9302 \
+  --mooncake gpu3=http://127.0.0.1:9303 \
   --output "$METRICS" --interval 0.25 &
 metrics_pid=$!
 
@@ -131,6 +149,16 @@ metrics_pid=$!
 cleanup
 metrics_pid=""
 sleep 1
+python -m benchmarks.sample_backend_metrics \
+  --backend gpu0=http://127.0.0.1:8000 \
+  --backend gpu1=http://127.0.0.1:8001 \
+  --backend gpu2=http://127.0.0.1:8002 \
+  --backend gpu3=http://127.0.0.1:8003 \
+  --mooncake gpu0=http://127.0.0.1:9300 \
+  --mooncake gpu1=http://127.0.0.1:9301 \
+  --mooncake gpu2=http://127.0.0.1:9302 \
+  --mooncake gpu3=http://127.0.0.1:9303 \
+  --output "$METRICS" --once
 for gpu in 0 1 2 3; do
   connector_trace="$LOG_ROOT/serving/backend-$gpu.connector-trace.jsonl"
   actual_trace="$LOG_ROOT/serving/backend-$gpu.connector-actual-trace.jsonl"

@@ -102,13 +102,20 @@ def inspect() -> dict[str, Any]:
         "kv_threshold_screening.jsonl": 60,
         "pd_crossover.jsonl": 48,
         "failure.jsonl": 8,
+        "v2_1_k01_strict.jsonl": 4,
+        "v2_1_k01_lru.jsonl": 5,
+        "v2_1_k01_lru_target.jsonl": 1,
+        "v2_1_k01_lru_fillers.jsonl": 4,
+        "v2_1_k02_cost.jsonl": 12,
+        "v2_1_k03_capacity.jsonl": 120,
+        "v2_1_k03_capacity_confirm.jsonl": 60,
     }
     observed_profiles = {
         name: int(value["rows"])
         for name, value in profile_manifest["artifacts"].items()
     }
     check(
-        "five_profiles",
+        "frozen_profiles",
         all(
             observed_profiles.get(name) == rows
             for name, rows in required_profiles.items()
@@ -139,8 +146,9 @@ def inspect() -> dict[str, Any]:
     check("candidate_arrival_traces", traces_valid, trace_details)
     independent_details = {}
     independent_valid = True
-    for rps in (2, 4):
-        path = TRACES / f"{rps}rps" / f"swe-final-poisson-{rps}rps-r2.jsonl"
+    for rps in (2.0, 2.5, 3.0, 3.5, 4.0):
+        label = f"{rps:g}"
+        path = TRACES / f"{label}rps" / f"swe-final-poisson-{label}rps-r2.jsonl"
         rows = [ArrivalTraceItem.model_validate(row) for row in read_jsonl(path)]
         ids = [row.request_id for row in rows]
         offsets = [row.offset_s for row in rows]
@@ -151,11 +159,34 @@ def inspect() -> dict[str, Any]:
             and offsets == sorted(offsets)
         )
         independent_valid &= valid
-        independent_details[f"{rps}rps-r2"] = {
+        independent_details[f"{label}rps-r2"] = {
             "sha256": sha256_file(path),
             "valid": valid,
         }
     check("v2_1_independent_arrival_traces", independent_valid, independent_details)
+    capacity_details = {}
+    capacity_valid = True
+    for label, profile_name, rows_expected in (
+        ("4rps", "v2_1_k03_capacity.jsonl", 120),
+        ("2rps", "v2_1_k03_capacity_confirm.jsonl", 60),
+    ):
+        path = TRACES / "v2_1_capacity" / label / f"swe-final-poisson-{label}-r1.jsonl"
+        profile_ids = {
+            str(row["request_id"])
+            for row in read_jsonl(DATA / "profiles" / profile_name)
+        }
+        rows = [ArrivalTraceItem.model_validate(row) for row in read_jsonl(path)]
+        ids = [row.request_id for row in rows]
+        offsets = [row.offset_s for row in rows]
+        valid = (
+            len(rows) == rows_expected
+            and len(ids) == len(set(ids))
+            and set(ids) == profile_ids
+            and offsets == sorted(offsets)
+        )
+        capacity_valid &= valid
+        capacity_details[label] = {"sha256": sha256_file(path), "valid": valid}
+    check("v2_1_capacity_traces", capacity_valid, capacity_details)
 
     runtime = json.loads(
         subprocess.check_output(
@@ -229,6 +260,11 @@ def inspect() -> dict[str, Any]:
         ROOT / "benchmarks" / "validate_four_h20_run.py",
         ROOT / "benchmarks" / "smoke_v2_1_2080ti.py",
         ROOT / "benchmarks" / "single_h20_v2_1_multitier.py",
+        ROOT / "benchmarks" / "freeze_v2_1_kv_costs.py",
+        ROOT / "benchmarks" / "select_v2_1_formal_rps.py",
+        ROOT / "benchmarks" / "record_v2_1_four_h20.py",
+        ROOT / "benchmarks" / "refresh_v2_1_router_tier.py",
+        ROOT / "benchmarks" / "validate_v2_1_k01.py",
     ]
     check(
         "measured_cost_and_runtime_gates",

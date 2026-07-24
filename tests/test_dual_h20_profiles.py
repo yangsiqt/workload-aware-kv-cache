@@ -3,13 +3,11 @@ from pathlib import Path
 from benchmarks.build_dual_h20_profiles import build
 from benchmarks.analyze_dual_h20 import analyze
 from benchmarks.io_utils import read_jsonl
-from benchmarks.sample_backend_metrics import parse_metrics
+from benchmarks.sample_backend_metrics import MOONCAKE_METRICS, parse_metrics
 
 
 def test_dual_profiles_are_fixed(tmp_path: Path) -> None:
-    manifest = build(
-        Path("/root/workload-aware-kv-cache-data/processed"), tmp_path
-    )
+    manifest = build(Path("/root/workload-aware-kv-cache-data/processed"), tmp_path)
     assert manifest["artifacts"]["controlled-16k32k.jsonl"]["rows"] == 8
     assert manifest["artifacts"]["calibration-60.jsonl"]["rows"] == 60
     assert manifest["artifacts"]["hotspot-16k-c16.jsonl"]["rows"] == 64
@@ -30,11 +28,42 @@ vllm:kv_cache_usage_perc 0.25
 """
     )
     assert values == {
+        "active_decode_sequences": 0.0,
+        "kv_cache_free_blocks": 0.0,
+        "kv_cache_total_blocks": 0.0,
         "running": 2.0,
+        "running_prefill_tokens": 0.0,
+        "scheduled_decode_tokens": 0.0,
+        "scheduled_prefill_tokens": 0.0,
+        "skipped_waiting_prefill_tokens": 0.0,
         "waiting": 3.0,
+        "waiting_prefill_tokens": 0.0,
         "prefix_queries": 1000.0,
         "prefix_hits": 750.0,
         "kv_usage": 0.25,
+        "preemptions_total": 0.0,
+    }
+
+
+def test_parse_mooncake_v2_1_metrics() -> None:
+    values = parse_metrics(
+        """
+mooncake_transfer_read_bytes 1024
+mooncake_transfer_read_operation_count 2
+mooncake_transfer_inflight_read_operations 1
+mooncake_transfer_inflight_read_bytes 512
+mooncake_transfer_read_failures 3
+mooncake_transfer_read_misses 4
+""",
+        MOONCAKE_METRICS,
+    )
+    assert values == {
+        "read_bytes_total": 1024.0,
+        "read_operations_total": 2.0,
+        "inflight_read_operations": 1.0,
+        "inflight_read_bytes": 512.0,
+        "read_failures_total": 3.0,
+        "read_misses_total": 4.0,
     }
 
 
