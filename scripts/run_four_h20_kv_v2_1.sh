@@ -298,15 +298,18 @@ if should_run K02; then
   ensure_stack
   profile="$PROFILE_ROOT/v2_1_k02_cost.jsonl"
   recompute="V21K02-recompute-$TAG"; CURRENT_RUNS+=("$recompute")
-  MIN_SUCCESS_RATE=1 REQUIRE_V2_1_WORKER_LIFECYCLE=true REQUIRE_SELECTED_KV_PATHS=recompute \
+  BENCHMARK_INTER_REQUEST_DELAY_S=1 MIN_SUCCESS_RATE=1 \
+    REQUIRE_V2_1_WORKER_LIFECYCLE=true REQUIRE_SELECTED_KV_PATHS=recompute \
     run_stage "$recompute" kv "$ROOT/configs/four_h20/agent-slo-kv-recompute.yaml" "$profile" closed_loop 1
   l1="V21K02-l1-$TAG"; CURRENT_RUNS+=("$l1")
-  RESET_EXTERNAL=false MIN_SUCCESS_RATE=1 REQUIRE_V2_1_WORKER_LIFECYCLE=true \
+  RESET_EXTERNAL=false BENCHMARK_INTER_REQUEST_DELAY_S=1 MIN_SUCCESS_RATE=1 \
+    REQUIRE_V2_1_WORKER_LIFECYCLE=true \
     REQUIRE_SELECTED_KV_PATHS=lmcache_l1 REQUIRE_ACTUAL_KV_PATHS=lmcache_l1 \
     run_stage "$l1" kv "$ROOT/configs/four_h20/agent-slo-kv-force-l1.yaml" "$profile" closed_loop 1
   if [[ "$DRY_RUN" == 1 ]]; then "$STACK" --dry-run clear-l1; else "$STACK" clear-l1; fi
   l2="V21K02-l2-$TAG"; CURRENT_RUNS+=("$l2")
-  RESET_EXTERNAL=false MIN_SUCCESS_RATE=1 REQUIRE_V2_1_WORKER_LIFECYCLE=true \
+  RESET_EXTERNAL=false BENCHMARK_INTER_REQUEST_DELAY_S=1 MIN_SUCCESS_RATE=1 \
+    REQUIRE_V2_1_WORKER_LIFECYCLE=true \
     REQUIRE_SELECTED_KV_PATHS=mooncake_l2 REQUIRE_ACTUAL_KV_PATHS=mooncake_l2 \
     run_stage "$l2" kv "$ROOT/configs/four_h20/agent-slo-kv-force-l2.yaml" "$profile" closed_loop 1
   CURRENT_ARTIFACTS+=("$COST_REPORT")
