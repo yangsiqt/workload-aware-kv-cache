@@ -683,6 +683,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         _run(stack, "reset-hbm", "true")
         _switch_router(stack, configs / "agent-slo-recompute.yaml")
         for length in (8192, 16384, 32768):
+            # Keep prefixes produced by earlier calibration requests in the
+            # external tiers, but never let the next length inherit HBM KV.
+            _run(stack, "reset-hbm", "false")
             measured(_clone(targets[length], f"h20-v22-s03-recompute-{length // 1024}k"))
         for length, target in targets.items():
             runtime["controller_snapshots"][f"seed_{length}"] = _wait_for_layout(
@@ -697,6 +700,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         _run(stack, "reset-hbm", "false")
         _switch_router(stack, configs / "agent-slo-force-l1.yaml")
         for length in (8192, 16384, 32768):
+            _run(stack, "reset-hbm", "false")
             measured(_clone(targets[length], f"h20-v22-s03-l1-{length // 1024}k"))
 
         for filler in fillers[:3]:
@@ -714,6 +718,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         _run(stack, "reset-hbm", "false")
         _switch_router(stack, configs / "agent-slo-force-l2.yaml")
         for length in (8192, 16384, 32768):
+            _run(stack, "reset-hbm", "false")
             measured(_clone(targets[length], f"h20-v22-s03-l2-{length // 1024}k"))
 
         for policy in ("fixed", "adaptive"):
