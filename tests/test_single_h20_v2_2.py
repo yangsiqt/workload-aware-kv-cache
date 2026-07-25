@@ -8,6 +8,7 @@ from benchmarks.single_h20_v2_2 import (
     build_profile,
     normalize_layout_v3,
 )
+from benchmarks.trace_schema import CandidateTrace
 
 
 def test_normalize_layout_v3_preserves_locations_and_latest_revision() -> None:
@@ -41,3 +42,20 @@ def test_profile_has_unique_targets_and_fillers(tmp_path: Path) -> None:
     assert manifest["filler_count"] == 14
     assert len(rows) == 17
     assert len({row["session_id"] for row in rows}) == 17
+
+
+def test_trace_schema_accepts_authoritative_vllm_kv_event_source() -> None:
+    score = CandidateTrace(
+        backend_url="http://127.0.0.1:8000",
+        running=0,
+        waiting=0,
+        cached_tokens=8192,
+        cache_source="vllm_kv_event",
+        cache_confidence=1.0,
+        queue_ms=0.0,
+        prefill_ms=0.0,
+        slo_penalty_ms=0.0,
+        total_ms=0.0,
+        stale=False,
+    )
+    assert score.cache_source == "vllm_kv_event"
