@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 from pathlib import Path
@@ -60,10 +61,20 @@ def check_readiness(require_gpu: bool = False) -> dict[str, Any]:
         "/root/wheels/workload-aware-kv-cache/v2-2/python-overlay/"
         "python-overlay-v2-2.sha256"
     )
+    overlay_valid = overlay_manifest.exists()
+    overlay_rows = overlay_manifest.read_text().splitlines() if overlay_valid else []
+    for row in overlay_rows:
+        expected_sha, separator, raw_path = row.partition("  ")
+        path = Path(raw_path)
+        if not separator or not path.exists():
+            overlay_valid = False
+            break
+        if hashlib.sha256(path.read_bytes()).hexdigest() != expected_sha:
+            overlay_valid = False
+            break
     add(
         "v2_2_runtime_overlay",
-        overlay_manifest.exists()
-        and len(overlay_manifest.read_text().splitlines()) == 9,
+        overlay_valid and len(overlay_rows) == 9,
         str(overlay_manifest),
     )
 
