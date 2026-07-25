@@ -610,13 +610,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         for target in targets.values():
             _direct_warmup(target)
         _run(stack, "reset-hbm", "true")
-        _wait_for_event_count(recorder, "AllBlocksCleared", 1)
 
         _switch_router(stack, configs / "agent-slo-adaptive.yaml")
         seed = _clone(targets[16384], "h20-v22-s02-hbm-seed")
         before = _clone(targets[16384], "h20-v22-s02-hbm-before")
         stored_before = recorder.count("BlockStored")
         measured(seed)
+        # vLLM drains reset/cache events while processing model output.  The
+        # first post-reset request therefore publishes AllBlocksCleared and its
+        # new BlockStored event in the same scheduler cycle.
+        _wait_for_event_count(recorder, "AllBlocksCleared", 1)
         _wait_for_event_count(recorder, "BlockStored", stored_before + 1)
         time.sleep(0.25)
         measured(before)
@@ -731,6 +734,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     finally:
         if recorder is not None:
             recorder.stop()
+            event_path = run_dir / "vllm-kv-events.jsonl"
+            if not event_path.exists() and recorder.rows():
+                write_jsonl(event_path, recorder.rows())
         if not args.keep_stack:
             subprocess.run([str(stack), "stop"], check=False)
 
