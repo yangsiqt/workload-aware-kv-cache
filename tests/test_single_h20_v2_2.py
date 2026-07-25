@@ -5,6 +5,7 @@ from pathlib import Path
 from benchmarks.io_utils import read_jsonl
 from benchmarks.single_h20_v2_2 import (
     _event_sequences_are_contiguous,
+    _validate_lifecycle,
     build_profile,
     normalize_layout_v3,
 )
@@ -59,3 +60,26 @@ def test_trace_schema_accepts_authoritative_vllm_kv_event_source() -> None:
         stale=False,
     )
     assert score.cache_source == "vllm_kv_event"
+
+
+def test_lifecycle_validation_uses_causal_cross_file_order() -> None:
+    identity = {
+        "schema_version": "2.2",
+        "request_id": "request",
+        "attempt_id": "0",
+        "decision_id": "request:0",
+        "backend_id": "backend",
+    }
+    rows = [
+        {**identity, "phase": "scheduler_seen", "recorded_at": 1.0},
+        {**identity, "phase": "load_started", "recorded_at": 2.0},
+        {**identity, "phase": "load_completed", "recorded_at": 3.0},
+        {
+            **identity,
+            "phase": "request_finished",
+            "recorded_at": 4.0,
+            "terminal": True,
+        },
+    ]
+    report = _validate_lifecycle(rows, {"request"})
+    assert report["phase_order_valid"] is True

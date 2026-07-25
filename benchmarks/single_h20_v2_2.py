@@ -377,7 +377,12 @@ def _validate_and_report(
     router_rows = [row for row in read_jsonl(router) if row.get("event") == "decision"]
     if len(router_rows) != len(measured_ids):
         raise RuntimeError("Router decision count does not match measured requests")
-    worker_rows = [*read_jsonl(lifecycle), *read_jsonl(actual)]
+    # Lifecycle and actual execution feedback are written by separate
+    # producers. Their file concatenation order is not their causal order.
+    worker_rows = sorted(
+        [*read_jsonl(lifecycle), *read_jsonl(actual)],
+        key=lambda row: float(row.get("recorded_at", 0.0)),
+    )
     lifecycle_report = _validate_lifecycle(worker_rows, measured_ids)
     decisions = {str(row["request_id"]): row for row in router_rows}
 
