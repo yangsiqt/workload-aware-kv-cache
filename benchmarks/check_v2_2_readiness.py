@@ -135,7 +135,7 @@ def check_readiness(
             break
     add(
         "v2_2_runtime_overlay",
-        overlay_valid and len(overlay_rows) == 9,
+        overlay_valid and len(overlay_rows) == 10,
         str(overlay_manifest),
     )
 

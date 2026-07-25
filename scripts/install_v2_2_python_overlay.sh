@@ -19,6 +19,7 @@ declare -a lmcache_files=(
   "integration/vllm/vllm_v1_adapter.py"
   "integration/vllm/lmcache_connector_v1.py"
   "v1/cache_engine.py"
+  "v1/api_server/__main__.py"
   "v1/cache_controller/message.py"
   "v1/cache_controller/controllers/kv_controller.py"
 )
@@ -57,13 +58,17 @@ done
   "${vllm_files[@]/#/$VLLM_INSTALLED/}" \
   "${lmcache_files[@]/#/$LMCACHE_INSTALLED/}"
 "$WORKER_PYTHON" - <<'PY'
+import inspect
+
 from lmcache.integration.vllm.workload_aware import WorkloadAwareResultTracker
+from lmcache.v1.api_server.__main__ import create_app
 from lmcache.v1.cache_controller.message import LookupRetMsg
 from vllm.v1.core.sched.scheduler import Scheduler
 
 assert hasattr(Scheduler, "prefix_cache_generation")
 assert hasattr(WorkloadAwareResultTracker, "set_backend_generation")
 assert "layout_info_v3" in LookupRetMsg.__struct_fields__
+assert "layout_info_v3" in inspect.getsource(create_app)
 print("V2_2_PYTHON_OVERLAY_OK")
 PY
 echo "$manifest"
