@@ -44,7 +44,7 @@ from benchmarks.tokenizer_utils import load_tokenizer
 SCOPE = "SINGLE_H20_V2_2_FUNCTIONAL_VALIDATION_NOT_FOUR_H20_PERFORMANCE"
 BACKEND = "http://127.0.0.1:8000"
 L1_GIB = 8
-L2_GIB = 16
+L2_GIB = 24
 KV_BYTES_PER_TOKEN = 98304
 MIN_CONTROLLER_TOKENS = 7936
 
@@ -634,6 +634,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         time.sleep(0.25)
         measured(before)
         before_decision = _wait_for_decision(trace, before.request_id)
+        before_candidate = before_decision["candidates"][0]
+        observed_total_blocks = int(before_candidate.get("kv_cache_total_blocks", 0))
+        if observed_total_blocks <= 0:
+            raise RuntimeError("Router did not observe a positive KV block capacity")
+        runtime["kv_capacity"] = {
+            "total_blocks": observed_total_blocks,
+            "block_size": 16,
+            "tokens": observed_total_blocks * 16,
+        }
         if before_decision["candidates"][0].get("cache_source") != "vllm_kv_event":
             raise RuntimeError("Router did not use vLLM events for the warm HBM target")
 
