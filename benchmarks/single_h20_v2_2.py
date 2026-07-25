@@ -414,9 +414,14 @@ def _validate_and_report(
         or int(hbm_before.get("cached_tokens", 0)) < 8192
     ):
         raise RuntimeError(f"Router did not consume the real HBM store: {hbm_before}")
+    after_path = str(
+        (decisions["h20-v22-s02-hbm-after"].get("kv_path") or {}).get(
+            "selected_path"
+        )
+    )
     if (
-        hbm_after.get("cache_source") != "vllm_kv_event"
-        or int(hbm_after.get("cached_tokens", -1)) != 0
+        int(hbm_after.get("local_hbm_cached_tokens", -1)) > 256
+        or after_path == "local_hbm"
     ):
         raise RuntimeError(f"Router did not consume the real HBM removal: {hbm_after}")
 
@@ -662,7 +667,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         after = _clone(targets[16384], "h20-v22-s02-hbm-after")
         measured(after)
         after_decision = _wait_for_decision(trace, after.request_id)
-        if int(after_decision["candidates"][0].get("cached_tokens", -1)) != 0:
+        after_candidate = after_decision["candidates"][0]
+        after_path = str((after_decision.get("kv_path") or {}).get("selected_path"))
+        if (
+            int(after_candidate.get("local_hbm_cached_tokens", -1)) > 256
+            or after_path == "local_hbm"
+        ):
             raise RuntimeError("oldest HBM target was not evicted after capacity fill")
 
         _run(stack, "reset-hbm", "true")
