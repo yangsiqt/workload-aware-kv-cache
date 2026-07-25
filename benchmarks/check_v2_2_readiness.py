@@ -53,8 +53,19 @@ def check_readiness(require_gpu: bool = False) -> dict[str, Any]:
         ROOT / "benchmarks/analyze_v2_2_pair.py",
         ROOT / "benchmarks/select_v2_2_thresholds.py",
         ROOT / "scripts/run_four_h20_kv_v2_2.sh",
+        ROOT / "scripts/install_v2_2_python_overlay.sh",
     ]
     add("workflow_files", all(path.exists() for path in required_files), None)
+    overlay_manifest = Path(
+        "/root/wheels/workload-aware-kv-cache/v2-2/python-overlay/"
+        "python-overlay-v2-2.sha256"
+    )
+    add(
+        "v2_2_runtime_overlay",
+        overlay_manifest.exists()
+        and len(overlay_manifest.read_text().splitlines()) == 9,
+        str(overlay_manifest),
+    )
 
     if require_gpu:
         command = [
