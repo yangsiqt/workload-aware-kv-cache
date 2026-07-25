@@ -23,6 +23,7 @@ RUN_ROOT="${RUN_ROOT:-/root/workload-aware-kv-cache-data/runs/four_h20}"
 TRACE_ROOT="${FOUR_H20_TRACE_ROOT:-/root/workload-aware-kv-cache-data/traces/four_h20/v2_2}"
 DATA="${FOUR_H20_DATA_ROOT:-/root/workload-aware-kv-cache-data/processed/four_h20}"
 RESULT_ROOT="${RESULT_ROOT:-/root/performance-results/workload-aware-kv-cache/four-h20/adaptive-kv-v2-2}"
+LOG_ROOT="${FOUR_H20_LOG_ROOT:-/root/log/workload-aware-kv-cache/four-h20}"
 CONTROL="$RUN_ROOT/V22-window-$TAG"
 COMPLETED="$CONTROL/completed"
 ACTIVE_FILE="$CONTROL/active-seconds"
@@ -36,8 +37,8 @@ FIXED_CONFIG="$ROOT/configs/four_h20/agent-slo-kv-fixed-4096-v2-2.yaml"
 ADAPTIVE_FROZEN="$CONTROL/adaptive-v2-2-frozen.yaml"
 THRESHOLD_REPORT="$CONTROL/threshold-selection.json"
 CAL_WORKLOAD="$TRACE_ROOT/v2-2-calibration-workload.jsonl"
-CAL_TRACE="$TRACE_ROOT/v2-2-calibration-wave-bursty-2.5rps.jsonl"
-FORMAL_TRACE="$TRACE_ROOT/v2-2-formal-wave-bursty-2.5rps.jsonl"
+CAL_TRACE="$TRACE_ROOT/v2-2-calibration-cohort-bursty-2.5rps.jsonl"
+FORMAL_TRACE="$TRACE_ROOT/v2-2-formal-cohort-bursty-2.5rps.jsonl"
 WORKLOAD="$DATA/swebench.jsonl"
 STACK_STARTED=0
 CURRENT_STAGE=""
@@ -61,6 +62,10 @@ remaining() {
 done_stage() { [[ "$DRY_RUN" == 0 && -f "$COMPLETED/$1" ]]; }
 mark_stage() {
   [[ "$DRY_RUN" == 1 ]] || touch "$COMPLETED/$1"
+  if [[ "$DRY_RUN" == 0 ]]; then
+    python -m benchmarks.record_v2_2_stage --tag "$TAG" --stage "$1" \
+      --status PASS --detail "$2"
+  fi
   echo "V2.2 stage $1 PASS: $2"
 }
 run_stage() {
@@ -79,11 +84,60 @@ ensure_stack() {
   fi
   STACK_STARTED=1
 }
+validate_live_stack() {
+  local gpu pid metrics metric cmdline
+  local -a vllm_metrics=(
+    "vllm:num_requests_running"
+    "vllm:num_requests_waiting"
+    "vllm:waiting_prefill_tokens"
+    "vllm:running_prefill_tokens"
+    "vllm:active_decode_sequences"
+    "vllm:scheduled_prefill_tokens"
+    "vllm:scheduled_decode_tokens"
+    "vllm:skipped_waiting_prefill_tokens"
+    "vllm:kv_cache_free_blocks"
+    "vllm:kv_cache_total_blocks"
+  )
+  local -a mooncake_metrics=(
+    "mooncake_transfer_inflight_read_operations"
+    "mooncake_transfer_inflight_read_bytes"
+    "mooncake_transfer_read_failures"
+    "mooncake_transfer_read_misses"
+  )
+  if [[ "$DRY_RUN" == 1 ]]; then
+    echo "DRY-RUN: validate four live vLLM/Mooncake endpoints, KV-event ports and max_num_seqs=12"
+    return
+  fi
+  for gpu in 0 1 2 3; do
+    metrics="$(curl -fsS "http://127.0.0.1:$((8000 + gpu))/metrics")"
+    for metric in "${vllm_metrics[@]}"; do
+      grep -Fq "$metric" <<<"$metrics" || {
+        echo "backend-$gpu missing required metric: $metric" >&2
+        return 1
+      }
+    done
+    pid="$(<"$LOG_ROOT/pids/backend-$gpu.pid")"
+    cmdline="$(tr '\0' ' ' <"/proc/$pid/cmdline")"
+    grep -Fq -- "--max-num-seqs 12" <<<"$cmdline" || return 1
+    grep -Fq -- "tcp://*:$((9400 + gpu))" <<<"$cmdline" || return 1
+    timeout 1 bash -c "</dev/tcp/127.0.0.1/$((9400 + gpu))"
+    curl -fsS "http://127.0.0.1:$((9300 + gpu))/health" >/dev/null
+    metrics="$(curl -fsS "http://127.0.0.1:$((9300 + gpu))/metrics")"
+    for metric in "${mooncake_metrics[@]}"; do
+      grep -Fq "$metric" <<<"$metrics" || return 1
+    done
+  done
+}
 finish() {
   local status=$?
   trap - EXIT INT TERM
   if [[ "$DRY_RUN" == 0 ]]; then
     echo "$(elapsed)" >"$ACTIVE_FILE"
+    if ((status != 0)) && [[ -n "$CURRENT_STAGE" ]]; then
+      python -m benchmarks.record_v2_2_stage --tag "$TAG" \
+        --stage "$CURRENT_STAGE" --status FAIL \
+        --detail "节点失败，已停止服务并保留现有证据。" || true
+    fi
     if ((status != 0)) && [[ "$CURRENT_STAGE" =~ ^K0[45]$ ]]; then
       rm -f "$COMPLETED/K04" "$COMPLETED/K05"
       PAIR_ATTEMPT=$((PAIR_ATTEMPT + 1))
@@ -104,6 +158,7 @@ if ! done_stage F00; then
       --output "$CONTROL/readiness.json"
   fi
   ensure_stack
+  validate_live_stack
   mark_stage F00 "四Backend启动；max_num_seqs=12；V2.2静态与GPU门禁通过。"
 fi
 
@@ -111,7 +166,7 @@ CAL_DEFAULT="V22K01-calibration-default-$TAG"
 if ! done_stage K01; then
   CURRENT_STAGE=K01
   ensure_stack
-  REQUIRE_V2_2_WORKER_LIFECYCLE=true run_stage "$CAL_DEFAULT" kv \
+  MIN_SUCCESS_RATE=1 REQUIRE_V2_2_WORKER_LIFECYCLE=true run_stage "$CAL_DEFAULT" kv \
     "$ADAPTIVE_TEMPLATE" "$CAL_WORKLOAD" poisson 64 "$CAL_TRACE"
   if [[ "$DRY_RUN" == 1 ]]; then
     echo "DRY-RUN: select one of 500ms/15%, 250ms/10%, 750ms/20% and freeze config"
@@ -125,13 +180,13 @@ if ! done_stage K01; then
     validation_run="$CAL_DEFAULT"
     if [[ "$recalibrate" == true ]]; then
       validation_run="V22K01-calibration-recalibrated-$TAG"
-      REQUIRE_V2_2_WORKER_LIFECYCLE=true run_stage "$validation_run" kv \
+      MIN_SUCCESS_RATE=1 REQUIRE_V2_2_WORKER_LIFECYCLE=true run_stage "$validation_run" kv \
         "$ADAPTIVE_FROZEN" "$CAL_WORKLOAD" poisson 64 "$CAL_TRACE"
     fi
     python -m benchmarks.validate_v2_2_activation \
       "$RUN_ROOT/$validation_run/joined_trace.jsonl" --expected-rows 180 \
       --min-overrides 9 --min-path-changes 4 --min-external-hit-rate 0.95 \
-      --min-external-overrides 1 \
+      --min-external-overrides 4 \
       --output "$CONTROL/calibration-activation.json"
   fi
   mark_stage K01 "180请求独立Trace校准完成；阈值最多调整一次并冻结。"

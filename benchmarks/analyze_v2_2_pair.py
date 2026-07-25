@@ -50,8 +50,11 @@ def analyze_pair(fixed_dir: Path, adaptive_dir: Path) -> dict[str, Any]:
         expected_rows=1200,
         min_overrides=60,
         min_path_changes=24,
-        min_external_overrides=1,
+        min_external_overrides=24,
         min_external_hit_rate=0.95,
+        min_refresh_coverage=0.99,
+        max_refresh_failure_rate=0.01,
+        min_hbm_event_coverage=0.90,
     )
     fixed_long_p90 = _long_prefix_p90(fixed_dir)
     adaptive_long_p90 = _long_prefix_p90(adaptive_dir)

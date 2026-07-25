@@ -33,9 +33,9 @@ def select_calibration_sessions(rows: list[dict[str, Any]]) -> set[str]:
     selected: set[str] = set()
     for bucket in ("8k", "16k", "32k"):
         sessions = sorted(by_bucket[bucket])
-        if len(sessions) < 10:
-            raise ValueError(f"length bucket {bucket} has fewer than 10 sessions")
-        selected.update(sessions[:10])
+        if len(sessions) < 20:
+            raise ValueError(f"length bucket {bucket} has fewer than 20 sessions")
+        selected.update(sessions[:20])
     return selected
 
 
@@ -80,22 +80,34 @@ def generate_trace(
     low_rps: float = 1.5,
     period_s: float = 12.0,
     mean_rps: float = 2.5,
+    cohort_size: int = 60,
 ) -> list[ArrivalTraceItem]:
+    if cohort_size <= 0:
+        raise ValueError("cohort_size must be positive")
     rng = random.Random(seed)
-    waves: dict[int, list[tuple[str, str]]] = defaultdict(list)
+    sessions: dict[str, dict[int, str]] = defaultdict(dict)
     seen: set[str] = set()
     for row in rows:
         request_id = str(row["request_id"])
         if request_id in seen:
             raise ValueError(f"duplicate request_id: {request_id}")
         seen.add(request_id)
-        waves[int(row["turn_id"])].append((str(row["session_id"]), request_id))
+        sessions[str(row["session_id"])][int(row["turn_id"])] = request_id
 
     ordered_ids: list[str] = []
-    for turn_id in sorted(waves):
-        wave = sorted(waves[turn_id])
-        rng.shuffle(wave)
-        ordered_ids.extend(request_id for _session_id, request_id in wave)
+    session_ids = sorted(sessions)
+    rng.shuffle(session_ids)
+    for start in range(0, len(session_ids), cohort_size):
+        cohort = session_ids[start : start + cohort_size]
+        turn_ids = sorted({turn for session_id in cohort for turn in sessions[session_id]})
+        for turn_id in turn_ids:
+            wave = [
+                session_id
+                for session_id in cohort
+                if turn_id in sessions[session_id]
+            ]
+            rng.shuffle(wave)
+            ordered_ids.extend(sessions[session_id][turn_id] for session_id in wave)
 
     offsets = _piecewise_offsets(
         len(ordered_ids),
@@ -120,7 +132,12 @@ def generate(workload: Path, output_dir: Path) -> dict[str, Path]:
     calibration_sessions = select_calibration_sessions(rows)
     profiles = {
         "calibration": (
-            [row for row in rows if str(row["session_id"]) in calibration_sessions],
+            [
+                row
+                for row in rows
+                if str(row["session_id"]) in calibration_sessions
+                and int(row["turn_id"]) < 3
+            ],
             52,
         ),
         "formal": (rows, 53),
@@ -132,7 +149,7 @@ def generate(workload: Path, output_dir: Path) -> dict[str, Path]:
     paths: dict[str, Path] = {}
     trace_records = []
     for name, (profile, seed) in profiles.items():
-        path = output_dir / f"v2-2-{name}-wave-bursty-2.5rps.jsonl"
+        path = output_dir / f"v2-2-{name}-cohort-bursty-2.5rps.jsonl"
         write_jsonl(path, generate_trace(profile, seed=seed))
         paths[name] = path
         trace_records.append(
@@ -149,7 +166,11 @@ def generate(workload: Path, output_dir: Path) -> dict[str, Path]:
         "created_at": datetime.now(UTC).isoformat(),
         "workload_path": str(workload.resolve()),
         "workload_sha256": sha256_file(workload),
-        "ordering": "six turn waves; sessions shuffled independently per wave",
+        "ordering": (
+            "60-session active cohorts; turns ordered within each cohort; "
+            "sessions shuffled independently per turn"
+        ),
+        "cohort_size": 60,
         "rate_pattern": {
             "high_rps": 3.5,
             "low_rps": 1.5,

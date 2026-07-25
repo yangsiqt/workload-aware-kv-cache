@@ -30,6 +30,8 @@ def select_thresholds(joined_path: Path) -> dict[str, Any]:
     potential_250 = sum(
         float(context.get("gain_ms", 0.0)) >= 250.0
         and float(context.get("gain_ratio", 0.0)) >= 0.10
+        and bool(context.get("telemetry_valid"))
+        and bool(context.get("cache_confidence_valid"))
         for context in contexts
     )
     ratio = overrides / total if total else 0.0

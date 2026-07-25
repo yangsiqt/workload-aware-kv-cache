@@ -10,6 +10,7 @@ from typing import Any
 import yaml
 
 from benchmarks.io_utils import read_jsonl, sha256_file, write_json
+from benchmarks.analyze_v2_2_cache_working_set import analyze as analyze_capacity
 
 ROOT = Path("/root/workload-aware-kv-cache")
 TRACE_ROOT = Path("/root/workload-aware-kv-cache-data/traces/four_h20/v2_2")
@@ -23,9 +24,9 @@ def check_readiness(require_gpu: bool = False) -> dict[str, Any]:
         checks.append({"name": name, "passed": bool(passed), "detail": detail})
 
     expected = {
-        "calibration": ("v2-2-calibration-wave-bursty-2.5rps.jsonl", 180),
-        "formal": ("v2-2-formal-wave-bursty-2.5rps.jsonl", 1200),
-        "replicate": ("v2-2-replicate-wave-bursty-2.5rps.jsonl", 1200),
+        "calibration": ("v2-2-calibration-cohort-bursty-2.5rps.jsonl", 180),
+        "formal": ("v2-2-formal-cohort-bursty-2.5rps.jsonl", 1200),
+        "replicate": ("v2-2-replicate-cohort-bursty-2.5rps.jsonl", 1200),
     }
     workload_rows = list(read_jsonl(WORKLOAD))
     add("workload", len(workload_rows) == 1200, sha256_file(WORKLOAD))
@@ -39,8 +40,30 @@ def check_readiness(require_gpu: bool = False) -> dict[str, Any]:
             {"rows": len(rows), "sha256": sha256_file(path) if path.exists() else ""},
         )
 
+    calibration_workload = TRACE_ROOT / "v2-2-calibration-workload.jsonl"
+    capacity_inputs = {
+        "calibration": (
+            calibration_workload,
+            TRACE_ROOT / expected["calibration"][0],
+        ),
+        "formal": (WORKLOAD, TRACE_ROOT / expected["formal"][0]),
+    }
+    for name, (profile, trace) in capacity_inputs.items():
+        report = analyze_capacity(profile, trace)
+        rate = report["simulated_hit_rate_all_requests"]
+        add(
+            f"simulated_cache_working_set_{name}",
+            0.10 <= rate <= 0.60,
+            report,
+        )
+
     adaptive = ROOT / "configs/four_h20/agent-slo-kv-adaptive-v2-2.yaml"
     config = yaml.safe_load(adaptive.read_text(encoding="utf-8"))
+    fixed = yaml.safe_load(
+        (ROOT / "configs/four_h20/agent-slo-kv-fixed-4096-v2-2.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
     add(
         "adaptive_config",
         config.get("kv_policy") == "adaptive_v2_2"
@@ -48,11 +71,25 @@ def check_readiness(require_gpu: bool = False) -> dict[str, Any]:
         and config.get("v2_min_gain_ratio") == 0.15,
         str(adaptive),
     )
+    add(
+        "shared_cache_visibility_plane",
+        config.get("cache_tier_route_wait_timeout_s") == 0.2
+        and fixed.get("cache_tier_route_wait_timeout_s") == 0.2
+        and config.get("vllm_kv_event_endpoints")
+        == fixed.get("vllm_kv_event_endpoints")
+        and len(config.get("vllm_kv_event_endpoints", {})) == 4,
+        {
+            "route_wait_s": config.get("cache_tier_route_wait_timeout_s"),
+            "event_endpoints": config.get("vllm_kv_event_endpoints"),
+        },
+    )
     required_files = [
         ROOT / "benchmarks/generate_v2_2_arrival_traces.py",
         ROOT / "benchmarks/validate_v2_2_activation.py",
         ROOT / "benchmarks/analyze_v2_2_pair.py",
         ROOT / "benchmarks/select_v2_2_thresholds.py",
+        ROOT / "benchmarks/analyze_v2_2_cache_working_set.py",
+        ROOT / "benchmarks/record_v2_2_stage.py",
         ROOT / "scripts/run_four_h20_kv_v2_2.sh",
         ROOT / "scripts/install_v2_2_python_overlay.sh",
     ]

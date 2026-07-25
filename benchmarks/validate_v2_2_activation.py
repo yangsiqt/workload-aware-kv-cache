@@ -10,6 +10,24 @@ from benchmarks.io_utils import read_jsonl, write_json
 EXTERNAL_PATHS = {"lmcache_l1", "mooncake_l2"}
 
 
+def _actual_path(events: list[dict[str, Any]]) -> str:
+    for phase in ("request_finished", "load_completed", "lookup_completed"):
+        for event in reversed(events):
+            if event.get("phase") == phase and event.get("actual_kv_path"):
+                return str(event["actual_kv_path"])
+    scheduler = next(
+        (event for event in reversed(events) if event.get("phase") == "scheduler_seen"),
+        None,
+    )
+    if scheduler is None:
+        return ""
+    return (
+        "local_hbm"
+        if int(scheduler.get("vllm_cached_tokens", 0) or 0) > 0
+        else "recompute"
+    )
+
+
 def activation_metrics(joined_path: Path) -> dict[str, Any]:
     rows = list(read_jsonl(joined_path))
     overrides = 0
@@ -18,12 +36,22 @@ def activation_metrics(joined_path: Path) -> dict[str, Any]:
     external_hits = 0
     mismatches: list[str] = []
     generation_rows = 0
+    refresh_attempts = 0
+    refresh_failures = 0
+    hbm_event_rows = 0
     for row in rows:
         attempts = row.get("attempts") or []
         if not attempts:
             continue
         final = attempts[-1]
         decision = final.get("decision") or {}
+        refresh = decision.get("cache_tier_refresh") or {}
+        refresh_attempts += bool(refresh.get("attempted"))
+        refresh_failures += bool(refresh.get("timed_out") or refresh.get("error"))
+        hbm_event_rows += any(
+            candidate.get("cache_source") == "vllm_kv_event"
+            for candidate in decision.get("candidates") or []
+        )
         context = decision.get("v2_context") or {}
         adaptive = context.get("adaptive") or {}
         fixed = context.get("fixed") or {}
@@ -35,9 +63,13 @@ def activation_metrics(joined_path: Path) -> dict[str, Any]:
             adaptive.get("backend_url") != fixed.get("backend_url")
             or adaptive_path != fixed_path
         )
-        path_changes += changed and adaptive_path != fixed_path
 
         events = final.get("worker_events") or []
+        actual_path = _actual_path(events)
+        selected_matches_actual = bool(actual_path) and actual_path == adaptive_path
+        path_changes += changed and adaptive_path != fixed_path and selected_matches_actual
+        if overridden and not selected_matches_actual:
+            mismatches.append(str(decision.get("decision_id", "")))
         generation_rows += any(
             event.get("phase") == "scheduler_seen"
             and bool(event.get("backend_generation"))
@@ -45,17 +77,8 @@ def activation_metrics(joined_path: Path) -> dict[str, Any]:
         )
         if overridden and adaptive_path in EXTERNAL_PATHS:
             external_overrides += 1
-            actual = [
-                event for event in events if event.get("phase") == "load_completed"
-            ]
-            if any(event.get("actual_kv_path") == adaptive_path for event in actual):
+            if actual_path == adaptive_path:
                 external_hits += 1
-            if any(
-                event.get("path_mismatch")
-                or str(event.get("actual_kv_path", "")) != adaptive_path
-                for event in actual
-            ):
-                mismatches.append(str(decision.get("decision_id", "")))
 
     return {
         "schema_version": "2.2",
@@ -68,6 +91,13 @@ def activation_metrics(joined_path: Path) -> dict[str, Any]:
             external_hits / external_overrides if external_overrides else None
         ),
         "scheduler_generation_rows": generation_rows,
+        "cache_tier_refresh_attempts": refresh_attempts,
+        "cache_tier_refresh_failures": refresh_failures,
+        "cache_tier_refresh_failure_rate": (
+            refresh_failures / refresh_attempts if refresh_attempts else None
+        ),
+        "hbm_event_rows": hbm_event_rows,
+        "hbm_event_coverage": hbm_event_rows / len(rows) if rows else 0.0,
         "path_mismatches": mismatches,
     }
 
@@ -80,6 +110,9 @@ def validate_activation(
     min_path_changes: int,
     min_external_overrides: int,
     min_external_hit_rate: float,
+    min_refresh_coverage: float = 0.0,
+    max_refresh_failure_rate: float = 1.0,
+    min_hbm_event_coverage: float = 0.0,
 ) -> dict[str, Any]:
     report = activation_metrics(joined_path)
     failures = []
@@ -96,12 +129,28 @@ def validate_activation(
         failures.append("external override actual-hit rate below gate")
     if report["path_mismatches"]:
         failures.append("selected/actual path mismatch")
+    refresh_coverage = report["cache_tier_refresh_attempts"] / max(
+        report["joined_rows"], 1
+    )
+    if refresh_coverage < min_refresh_coverage:
+        failures.append("Controller refresh coverage below gate")
+    refresh_failure_rate = report["cache_tier_refresh_failure_rate"]
+    if (
+        refresh_failure_rate is not None
+        and refresh_failure_rate > max_refresh_failure_rate
+    ):
+        failures.append("Controller refresh failure rate above gate")
+    if report["hbm_event_coverage"] < min_hbm_event_coverage:
+        failures.append("vLLM KV event coverage below gate")
     report["thresholds"] = {
         "expected_rows": expected_rows,
         "min_overrides": min_overrides,
         "min_path_changes": min_path_changes,
         "min_external_overrides": min_external_overrides,
         "min_external_hit_rate": min_external_hit_rate,
+        "min_refresh_coverage": min_refresh_coverage,
+        "max_refresh_failure_rate": max_refresh_failure_rate,
+        "min_hbm_event_coverage": min_hbm_event_coverage,
     }
     report["failures"] = failures
     report["passed"] = not failures
@@ -114,8 +163,11 @@ def main() -> None:
     parser.add_argument("--expected-rows", type=int, default=1200)
     parser.add_argument("--min-overrides", type=int, default=60)
     parser.add_argument("--min-path-changes", type=int, default=24)
-    parser.add_argument("--min-external-overrides", type=int, default=1)
+    parser.add_argument("--min-external-overrides", type=int, default=24)
     parser.add_argument("--min-external-hit-rate", type=float, default=0.95)
+    parser.add_argument("--min-refresh-coverage", type=float, default=0.99)
+    parser.add_argument("--max-refresh-failure-rate", type=float, default=0.01)
+    parser.add_argument("--min-hbm-event-coverage", type=float, default=0.90)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     report = validate_activation(
@@ -125,6 +177,9 @@ def main() -> None:
         min_path_changes=args.min_path_changes,
         min_external_overrides=args.min_external_overrides,
         min_external_hit_rate=args.min_external_hit_rate,
+        min_refresh_coverage=args.min_refresh_coverage,
+        max_refresh_failure_rate=args.max_refresh_failure_rate,
+        min_hbm_event_coverage=args.min_hbm_event_coverage,
     )
     if args.output:
         write_json(args.output, report)

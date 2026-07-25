@@ -151,7 +151,8 @@ start_kv() {
   fi
   start_mooncake_and_controller
   for gpu in 0 1 2 3; do
-    local port=$((8000 + gpu))
+    local port=$((8000 + gpu)) kv_event_port=$((9400 + gpu)) kv_events_config
+    kv_events_config="{\"enable_kv_cache_events\":true,\"publisher\":\"zmq\",\"endpoint\":\"tcp://*:$kv_event_port\",\"topic\":\"workload-aware-kv\"}"
     start_process "backend-$gpu" env \
       "CUDA_VISIBLE_DEVICES=$gpu" \
       "LMCACHE_CONFIG_FILE=$PROJECT_ROOT/configs/four_h20/lmcache-backend-$gpu.yaml" \
@@ -160,6 +161,7 @@ start_kv() {
       VLLM_SERVER_DEV_MODE=1 \
       "PYTHONHASHSEED=$LMCACHE_HASH_SEED" \
       "${vllm_base[@]}" --port "$port" \
+      --kv-events-config "$kv_events_config" \
       --kv-transfer-config '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'
     wait_http "backend-$gpu" "http://127.0.0.1:$port/v1/models"
     wait_http "backend-$gpu" "http://127.0.0.1:$((9300 + gpu))/health"
