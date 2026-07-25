@@ -63,7 +63,7 @@ class CandidateTrace(BaseModel):
 class RouteTraceEvent(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    schema_version: Literal["1.0", "1.1", "1.2", "2.0", "2.1"] = "1.2"
+    schema_version: Literal["1.0", "1.1", "1.2", "2.0", "2.1", "2.2"] = "1.2"
     event: Literal["decision", "completion"]
     request_id: str
     attempt_id: int = Field(default=0, ge=0)

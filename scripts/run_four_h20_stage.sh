@@ -34,6 +34,7 @@ REQUIRE_SELECTED_KV_PATHS="${REQUIRE_SELECTED_KV_PATHS:-}"
 REQUIRE_ACTUAL_KV_PATHS="${REQUIRE_ACTUAL_KV_PATHS:-}"
 REQUIRE_EXECUTION_MODES="${REQUIRE_EXECUTION_MODES:-}"
 REQUIRE_V2_1_WORKER_LIFECYCLE="${REQUIRE_V2_1_WORKER_LIFECYCLE:-false}"
+REQUIRE_V2_2_WORKER_LIFECYCLE="${REQUIRE_V2_2_WORKER_LIFECYCLE:-false}"
 metrics_pid=""
 benchmark_pid=""
 START_READY="$LOG_ROOT/benchmark/$RUN_ID.client-ready"
@@ -54,7 +55,7 @@ join_command() {
     "$RUN_ROOT/$RUN_ID/requests.jsonl" "$TRACE"
     "$RUN_ROOT/$RUN_ID/joined_trace.jsonl"
   )
-  if [[ "$REQUIRE_V2_1_WORKER_LIFECYCLE" == "true" ]]; then
+  if [[ "$REQUIRE_V2_1_WORKER_LIFECYCLE" == "true" || "$REQUIRE_V2_2_WORKER_LIFECYCLE" == "true" ]]; then
     for gpu in 0 1 2 3; do
       command+=(
         --worker-trace "$RUN_ROOT/$RUN_ID/connector_trace_gpu$gpu.jsonl"
@@ -75,6 +76,9 @@ validate_command() {
   )
   if [[ "$REQUIRE_V2_1_WORKER_LIFECYCLE" == "true" ]]; then
     command+=(--require-v2-1-worker-lifecycle)
+  fi
+  if [[ "$REQUIRE_V2_2_WORKER_LIFECYCLE" == "true" ]]; then
+    command+=(--require-v2-2-worker-lifecycle)
   fi
   "${command[@]}"
 }

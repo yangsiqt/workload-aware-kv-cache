@@ -19,7 +19,7 @@ def _worker_key(row: dict[str, Any]) -> tuple[str, int, str]:
     except (TypeError, ValueError) as exc:
         raise ValueError(f"invalid Worker attempt_id for {request_id!r}") from exc
     if not request_id or not backend_id:
-        raise ValueError("Worker 2.1 events require request_id and backend_id")
+        raise ValueError("Worker 2.1/2.2 events require request_id and backend_id")
     return request_id, attempt_id, backend_id
 
 
@@ -30,7 +30,7 @@ def _load_worker_events(paths: list[Path]) -> dict[tuple[str, int, str], list[di
         if not path.exists():
             continue
         for row in read_jsonl(path):
-            if row.get("schema_version") != "2.1":
+            if row.get("schema_version") not in {"2.1", "2.2"}:
                 continue
             if row.get("event_type") != "kv_execution_feedback":
                 continue
@@ -164,7 +164,7 @@ def main() -> None:
         action="append",
         type=Path,
         default=[],
-        help="LMCache 2.1 scheduler or Worker trace (repeatable)",
+        help="LMCache 2.1/2.2 scheduler or Worker trace (repeatable)",
     )
     args = parser.parse_args()
     print(join(args.client, args.router, args.output, args.worker_trace))

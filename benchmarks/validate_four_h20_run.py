@@ -21,6 +21,7 @@ def validate_run(
     required_actual_kv_paths: set[str] | None = None,
     required_execution_modes: set[str] | None = None,
     require_v2_1_worker_lifecycle: bool = False,
+    require_v2_2_worker_lifecycle: bool = False,
 ) -> dict[str, Any]:
     workload_ids = {str(row["request_id"]) for row in read_jsonl(workload)}
     requests = list(read_jsonl(run_dir / "requests.jsonl"))
@@ -106,7 +107,10 @@ def validate_run(
         )
     if len(joined_ids) != len(set(joined_ids)) or set(joined_ids) != workload_ids:
         failures.append("joined Trace IDs do not exactly match workload")
-    if require_v2_1_worker_lifecycle:
+    require_worker_lifecycle = (
+        require_v2_1_worker_lifecycle or require_v2_2_worker_lifecycle
+    )
+    if require_worker_lifecycle:
         if scheduler_seen_attempts != lifecycle_attempts:
             failures.append(
                 "successful final attempts do not each have one scheduler_seen event"
@@ -127,7 +131,13 @@ def validate_run(
             failures.append(f"missing required {label} evidence: {sorted(missing)}")
 
     report = {
-        "schema_version": "2.1" if require_v2_1_worker_lifecycle else "1.0",
+        "schema_version": (
+            "2.2"
+            if require_v2_2_worker_lifecycle
+            else "2.1"
+            if require_v2_1_worker_lifecycle
+            else "1.0"
+        ),
         "run_dir": str(run_dir.resolve()),
         "workload": str(workload.resolve()),
         "expected_requests": len(workload_ids),
@@ -161,6 +171,7 @@ def main() -> None:
     parser.add_argument("--require-actual-kv-paths", default="")
     parser.add_argument("--require-execution-modes", default="")
     parser.add_argument("--require-v2-1-worker-lifecycle", action="store_true")
+    parser.add_argument("--require-v2-2-worker-lifecycle", action="store_true")
     args = parser.parse_args()
     report = validate_run(
         args.run_dir,
@@ -170,6 +181,7 @@ def main() -> None:
         required_actual_kv_paths=_csv_set(args.require_actual_kv_paths),
         required_execution_modes=_csv_set(args.require_execution_modes),
         require_v2_1_worker_lifecycle=args.require_v2_1_worker_lifecycle,
+        require_v2_2_worker_lifecycle=args.require_v2_2_worker_lifecycle,
     )
     print(json.dumps(report, indent=2, sort_keys=True))
 
