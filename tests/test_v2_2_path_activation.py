@@ -71,6 +71,7 @@ def test_activation_gate_counts_real_path_changes(tmp_path: Path) -> None:
         expected_rows=10,
         min_overrides=6,
         min_path_changes=6,
+        min_external_overrides=1,
         min_external_hit_rate=0.95,
     )
     assert report["passed"]
@@ -85,6 +86,7 @@ def test_activation_gate_rejects_worker_path_mismatch(tmp_path: Path) -> None:
         expected_rows=1,
         min_overrides=1,
         min_path_changes=1,
+        min_external_overrides=1,
         min_external_hit_rate=0.95,
     )
     assert not report["passed"]

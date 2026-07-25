@@ -131,6 +131,7 @@ if ! done_stage K01; then
     python -m benchmarks.validate_v2_2_activation \
       "$RUN_ROOT/$validation_run/joined_trace.jsonl" --expected-rows 180 \
       --min-overrides 9 --min-path-changes 4 --min-external-hit-rate 0.95 \
+      --min-external-overrides 1 \
       --output "$CONTROL/calibration-activation.json"
   fi
   mark_stage K01 "180请求独立Trace校准完成；阈值最多调整一次并冻结。"

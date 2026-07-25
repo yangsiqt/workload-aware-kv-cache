@@ -78,6 +78,7 @@ def validate_activation(
     expected_rows: int,
     min_overrides: int,
     min_path_changes: int,
+    min_external_overrides: int,
     min_external_hit_rate: float,
 ) -> dict[str, Any]:
     report = activation_metrics(joined_path)
@@ -88,6 +89,8 @@ def validate_activation(
         failures.append("adaptive override count below gate")
     if report["kv_path_changes"] < min_path_changes:
         failures.append("KV path change count below gate")
+    if report["external_overrides"] < min_external_overrides:
+        failures.append("external override count below gate")
     rate = report["external_actual_hit_rate"]
     if report["external_overrides"] and (rate is None or rate < min_external_hit_rate):
         failures.append("external override actual-hit rate below gate")
@@ -97,6 +100,7 @@ def validate_activation(
         "expected_rows": expected_rows,
         "min_overrides": min_overrides,
         "min_path_changes": min_path_changes,
+        "min_external_overrides": min_external_overrides,
         "min_external_hit_rate": min_external_hit_rate,
     }
     report["failures"] = failures
@@ -110,6 +114,7 @@ def main() -> None:
     parser.add_argument("--expected-rows", type=int, default=1200)
     parser.add_argument("--min-overrides", type=int, default=60)
     parser.add_argument("--min-path-changes", type=int, default=24)
+    parser.add_argument("--min-external-overrides", type=int, default=1)
     parser.add_argument("--min-external-hit-rate", type=float, default=0.95)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
@@ -118,6 +123,7 @@ def main() -> None:
         expected_rows=args.expected_rows,
         min_overrides=args.min_overrides,
         min_path_changes=args.min_path_changes,
+        min_external_overrides=args.min_external_overrides,
         min_external_hit_rate=args.min_external_hit_rate,
     )
     if args.output:
