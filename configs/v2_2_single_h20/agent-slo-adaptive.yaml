@@ -1,0 +1,39 @@
+policy_level: P-R3
+prefill_tokens_per_s: 6118.98
+prefill_intercept_ms: 0.0
+external_enabled: true
+kv_policy: adaptive_v2_2
+kv_fixed_min_retrieve_tokens: 4096
+cache_tier_controller_url: http://127.0.0.1:9000
+cache_tier_tokenizer_path: /root/autodl-fs/models/Qwen3-30B-A3B-Instruct-2507
+cache_tier_lookup_timeout_s: 0.5
+cache_tier_route_wait_timeout_s: 0.2
+cache_tier_lookup_workers: 1
+cache_tier_stale_after_s: 1.0
+cache_instance_backend_map:
+  v2-2-single-h20: http://127.0.0.1:8000
+vllm_kv_event_endpoints:
+  http://127.0.0.1:8000: tcp://127.0.0.1:9400
+vllm_kv_event_topic: workload-aware-kv
+kv_l1_tokens_per_s: 521178.45
+kv_l2_tokens_per_s: 30177.46
+v2_feedback_path: /root/log/workload-aware-kv-cache/v2-2-single-h20/serving/backend.connector-actual-trace.jsonl
+v2_lifecycle_path: /root/log/workload-aware-kv-cache/v2-2-single-h20/serving/backend.connector-trace.jsonl
+v2_feedback_poll_interval_s: 0.1
+v2_ewma_alpha: 0.2
+v2_min_feedback_samples: 3
+v2_reservation_dispatch_timeout_s: 30.0
+v2_kv_block_size: 16
+v2_decode_pressure_ms: 25.0
+v2_min_gain_ms: 0.0
+v2_min_gain_ratio: 0.0
+v2_min_cache_confidence: 0.5
+v2_authoritative_residency: true
+mooncake_metrics_urls:
+  http://127.0.0.1:8000: http://127.0.0.1:9300/metrics
+mooncake_metrics_poll_interval_s: 0.25
+mooncake_metrics_stale_after_s: 1.0
+mooncake_bandwidth_ewma_alpha: 0.2
+kv_bytes_per_token: 98304
+pd_enabled: false
+pd_policy: disabled

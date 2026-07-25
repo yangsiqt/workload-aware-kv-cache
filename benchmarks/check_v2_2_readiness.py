@@ -17,7 +17,9 @@ TRACE_ROOT = Path("/root/workload-aware-kv-cache-data/traces/four_h20/v2_2")
 WORKLOAD = Path("/root/workload-aware-kv-cache-data/processed/four_h20/swebench.jsonl")
 
 
-def check_readiness(require_gpu: bool = False) -> dict[str, Any]:
+def check_readiness(
+    require_gpu: bool = False, expected_gpu_count: int = 4
+) -> dict[str, Any]:
     checks = []
 
     def add(name: str, passed: bool, detail: Any) -> None:
@@ -93,6 +95,28 @@ def check_readiness(require_gpu: bool = False) -> dict[str, Any]:
         ROOT / "scripts/run_four_h20_kv_v2_2.sh",
         ROOT / "scripts/install_v2_2_python_overlay.sh",
     ]
+    if expected_gpu_count == 1:
+        single_config_dir = ROOT / "configs/v2_2_single_h20"
+        single_adaptive = yaml.safe_load(
+            (single_config_dir / "agent-slo-adaptive.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        add(
+            "single_h20_config",
+            single_adaptive.get("kv_policy") == "adaptive_v2_2"
+            and single_adaptive.get("cache_tier_route_wait_timeout_s") == 0.2
+            and single_adaptive.get("vllm_kv_event_endpoints")
+            == {"http://127.0.0.1:8000": "tcp://127.0.0.1:9400"},
+            str(single_config_dir),
+        )
+        required_files.extend(
+            [
+                ROOT / "benchmarks/single_h20_v2_2.py",
+                ROOT / "scripts/run_v2_2_single_h20.sh",
+                ROOT / "scripts/v2_2_single_h20_stack.sh",
+            ]
+        )
     add("workflow_files", all(path.exists() for path in required_files), None)
     overlay_manifest = Path(
         "/root/wheels/workload-aware-kv-cache/v2-2/python-overlay/"
@@ -126,13 +150,17 @@ def check_readiness(require_gpu: bool = False) -> dict[str, Any]:
         except (OSError, subprocess.CalledProcessError):
             gpu_rows = []
         add(
-            "four_h20",
-            len(gpu_rows) == 4 and all("H20" in row for row in gpu_rows),
+            "single_h20" if expected_gpu_count == 1 else "four_h20",
+            len(gpu_rows) == expected_gpu_count
+            and all("H20" in row for row in gpu_rows),
             gpu_rows,
         )
+    scope = "NO_GPU_STATIC_READY"
+    if require_gpu:
+        scope = "SINGLE_H20_READY" if expected_gpu_count == 1 else "FOUR_H20_READY"
     return {
         "schema_version": "2.2",
-        "scope": "NO_GPU_STATIC_READY" if not require_gpu else "FOUR_H20_READY",
+        "scope": scope,
         "checks": checks,
         "passed": all(check["passed"] for check in checks),
         "performance_validated": False,
@@ -142,9 +170,13 @@ def check_readiness(require_gpu: bool = False) -> dict[str, Any]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--require-gpu", action="store_true")
+    parser.add_argument("--single-h20", action="store_true")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    report = check_readiness(args.require_gpu)
+    report = check_readiness(
+        args.require_gpu or args.single_h20,
+        expected_gpu_count=1 if args.single_h20 else 4,
+    )
     if args.output:
         write_json(args.output, report)
     print(json.dumps(report, indent=2, sort_keys=True))

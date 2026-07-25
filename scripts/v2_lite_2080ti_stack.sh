@@ -19,6 +19,8 @@ LMCACHE_CONFIG="${SMOKE_LMCACHE_CONFIG:-$ROOT/configs/v2_lite/lmcache-2080ti.yam
 ROUTER_CONFIG="${SMOKE_ROUTER_CONFIG:-$ROOT/configs/v2_lite/agent-slo-2080ti.yaml}"
 LMCACHE_INSTANCE_ID="${SMOKE_LMCACHE_INSTANCE_ID:-v2-lite-2080ti}"
 MOONCAKE_CLIENT_METRICS_PORT="${SMOKE_MOONCAKE_CLIENT_METRICS_PORT:-9300}"
+KV_EVENTS_CONFIG="${SMOKE_KV_EVENTS_CONFIG:-}"
+SAFETENSORS_LOAD_STRATEGY="${SMOKE_SAFETENSORS_LOAD_STRATEGY:-}"
 
 mkdir -p "$PID_DIR" "$LOG_ROOT/components" "$LOG_ROOT/serving" "$LOG_ROOT/routing"
 
@@ -126,6 +128,10 @@ start_all() {
     --kv-transfer-config '{"kv_connector":"LMCacheConnectorV1","kv_role":"kv_both"}'
   )
   [[ "$ENFORCE_EAGER" == 1 ]] && vllm_args+=(--enforce-eager)
+  [[ -n "$KV_EVENTS_CONFIG" ]] && vllm_args+=(--kv-events-config "$KV_EVENTS_CONFIG")
+  if [[ -n "$SAFETENSORS_LOAD_STRATEGY" ]]; then
+    vllm_args+=(--safetensors-load-strategy "$SAFETENSORS_LOAD_STRATEGY")
+  fi
   start_process backend env \
     CUDA_VISIBLE_DEVICES=0 \
     LMCACHE_CONFIG_FILE="$LMCACHE_CONFIG" \
