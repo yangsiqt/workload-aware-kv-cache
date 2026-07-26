@@ -201,6 +201,11 @@ if ! done_stage K01; then
       --min-overrides 9 --min-path-changes 4 --min-external-hit-rate 0.95 \
       --min-external-overrides 4 \
       --output "$CONTROL/calibration-activation.json"
+    if [[ "$VERSION_LABEL" == "V2.3" ]]; then
+      python -m benchmarks.validate_v2_3_decode_telemetry \
+        "$RUN_ROOT/$validation_run/joined_trace.jsonl" --expected-rows 180 \
+        --output "$CONTROL/calibration-decode-telemetry.json"
+    fi
   fi
   mark_stage K01 "180请求独立Trace校准完成；阈值最多调整一次并冻结。"
 fi
@@ -231,19 +236,19 @@ fi
 
 FIXED_REPLICATE_RUN="${RUN_NAME_VERSION}K04R-fixed-replicate-2.5rps-$TAG-p$PAIR_ATTEMPT"
 ADAPTIVE_REPLICATE_RUN="${RUN_NAME_VERSION}K05R-adaptive-replicate-2.5rps-$TAG-p$PAIR_ATTEMPT"
-if [[ -n "$REPLICATE_TRACE" ]] && ! done_stage K04R; then
-  CURRENT_STAGE=K04R
-  ensure_stack
-  REQUIRE_V2_2_WORKER_LIFECYCLE=true run_stage "$FIXED_REPLICATE_RUN" kv \
-    "$FIXED_CONFIG" "$WORKLOAD" poisson 64 "$REPLICATE_TRACE"
-  mark_stage K04R "fixed-4096独立Arrival Trace复验完成；不单独形成结论。"
-fi
 if [[ -n "$REPLICATE_TRACE" ]] && ! done_stage K05R; then
   CURRENT_STAGE=K05R
   ensure_stack
   REQUIRE_V2_2_WORKER_LIFECYCLE=true run_stage "$ADAPTIVE_REPLICATE_RUN" kv \
     "$ADAPTIVE_FROZEN" "$WORKLOAD" poisson 64 "$REPLICATE_TRACE"
   mark_stage K05R "Adaptive独立Arrival Trace复验完成；等待双Trace门禁。"
+fi
+if [[ -n "$REPLICATE_TRACE" ]] && ! done_stage K04R; then
+  CURRENT_STAGE=K04R
+  ensure_stack
+  REQUIRE_V2_2_WORKER_LIFECYCLE=true run_stage "$FIXED_REPLICATE_RUN" kv \
+    "$FIXED_CONFIG" "$WORKLOAD" poisson 64 "$REPLICATE_TRACE"
+  mark_stage K04R "fixed-4096独立Arrival Trace复验完成；与Adaptive形成反向顺序配对。"
 fi
 
 if ! done_stage K07; then

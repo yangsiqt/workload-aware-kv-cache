@@ -18,7 +18,9 @@ WORKLOAD = Path("/root/workload-aware-kv-cache-data/processed/four_h20/swebench.
 
 
 def check_readiness(
-    require_gpu: bool = False, expected_gpu_count: int = 4
+    require_gpu: bool = False,
+    expected_gpu_count: int = 4,
+    require_runtime_overlay: bool = True,
 ) -> dict[str, Any]:
     checks = []
 
@@ -151,26 +153,29 @@ def check_readiness(
             ]
         )
     add("workflow_files", all(path.exists() for path in required_files), None)
-    overlay_manifest = Path(
-        "/root/wheels/workload-aware-kv-cache/v2-2/python-overlay/"
-        "python-overlay-v2-2.sha256"
-    )
-    overlay_valid = overlay_manifest.exists()
-    overlay_rows = overlay_manifest.read_text().splitlines() if overlay_valid else []
-    for row in overlay_rows:
-        expected_sha, separator, raw_path = row.partition("  ")
-        path = Path(raw_path)
-        if not separator or not path.exists():
-            overlay_valid = False
-            break
-        if hashlib.sha256(path.read_bytes()).hexdigest() != expected_sha:
-            overlay_valid = False
-            break
-    add(
-        "v2_2_runtime_overlay",
-        overlay_valid and len(overlay_rows) == 10,
-        str(overlay_manifest),
-    )
+    if require_runtime_overlay:
+        overlay_manifest = Path(
+            "/root/wheels/workload-aware-kv-cache/v2-2/python-overlay/"
+            "python-overlay-v2-2.sha256"
+        )
+        overlay_valid = overlay_manifest.exists()
+        overlay_rows = (
+            overlay_manifest.read_text().splitlines() if overlay_valid else []
+        )
+        for row in overlay_rows:
+            expected_sha, separator, raw_path = row.partition("  ")
+            path = Path(raw_path)
+            if not separator or not path.exists():
+                overlay_valid = False
+                break
+            if hashlib.sha256(path.read_bytes()).hexdigest() != expected_sha:
+                overlay_valid = False
+                break
+        add(
+            "v2_2_runtime_overlay",
+            overlay_valid and len(overlay_rows) == 10,
+            str(overlay_manifest),
+        )
 
     if require_gpu:
         command = [

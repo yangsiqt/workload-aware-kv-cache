@@ -61,6 +61,8 @@ def validate_run(
 
     failures: list[str] = []
     lifecycle_attempts = 0
+    scheduler_enqueued_attempts = 0
+    ordered_scheduler_handoffs = 0
     scheduler_seen_attempts = 0
     terminal_attempts = 0
     path_mismatches: list[str] = []
@@ -75,6 +77,21 @@ def validate_run(
             continue
         lifecycle_attempts += 1
         worker_events = final.get("worker_events") or []
+        enqueued = [
+            event for event in worker_events if event.get("phase") == "scheduler_enqueued"
+        ]
+        seen = [
+            event for event in worker_events if event.get("phase") == "scheduler_seen"
+        ]
+        if len(enqueued) == 1:
+            scheduler_enqueued_attempts += 1
+        if (
+            len(enqueued) == 1
+            and len(seen) == 1
+            and float(enqueued[0].get("recorded_at", 0.0))
+            <= float(seen[0].get("recorded_at", 0.0))
+        ):
+            ordered_scheduler_handoffs += 1
         if sum(event.get("phase") == "scheduler_seen" for event in worker_events) == 1:
             scheduler_seen_attempts += 1
         terminals = [event for event in worker_events if event.get("terminal") is True]
@@ -124,6 +141,15 @@ def validate_run(
             )
         if path_mismatches:
             failures.append(f"selected/actual KV path mismatch: {path_mismatches[:5]}")
+    if require_v2_3_worker_lifecycle:
+        if scheduler_enqueued_attempts != lifecycle_attempts:
+            failures.append(
+                "successful final attempts do not each have one scheduler_enqueued event"
+            )
+        if ordered_scheduler_handoffs != lifecycle_attempts:
+            failures.append(
+                "scheduler_enqueued does not precede scheduler_seen for each attempt"
+            )
     for label, required, observed in (
         ("selected KV", required_selected_kv_paths or set(), selected_paths),
         ("actual KV", required_actual_kv_paths or set(), actual_paths),
@@ -155,6 +181,8 @@ def validate_run(
         "actual_retrieve_rows": len(actual_rows),
         "execution_modes": sorted(execution_modes),
         "worker_lifecycle_attempts": lifecycle_attempts,
+        "scheduler_enqueued_attempts": scheduler_enqueued_attempts,
+        "ordered_scheduler_handoffs": ordered_scheduler_handoffs,
         "scheduler_seen_attempts": scheduler_seen_attempts,
         "worker_terminal_attempts": terminal_attempts,
         "path_mismatches": path_mismatches,

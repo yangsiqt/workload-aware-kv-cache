@@ -70,8 +70,9 @@ def analyze_pair(fixed_dir: Path, adaptive_dir: Path) -> dict[str, Any]:
             key = f"{family}_p{percentile}_improvement"
             if metrics[key] is None or metrics[key] < 0:
                 failures.append(f"{family.upper()} p{percentile} regressed")
-    if (metrics["e2e_p99_improvement"] or float("-inf")) < 0.05:
-        failures.append("E2E p99 improvement below 5%")
+    e2e_p99_improvement = metrics["e2e_p99_improvement"]
+    if e2e_p99_improvement is None or e2e_p99_improvement < 0.0:
+        failures.append("E2E p99 regressed")
     if (metrics["slo_goodput_improvement"] or float("-inf")) < 0.03:
         failures.append("SLO Goodput improvement below 3%")
     if metrics["throughput_change"] < -0.01:

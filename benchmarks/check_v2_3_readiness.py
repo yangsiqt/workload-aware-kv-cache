@@ -33,7 +33,11 @@ def _overlay_valid(path: Path, expected_rows: int) -> bool:
 def check_readiness(
     require_gpu: bool = False, expected_gpu_count: int = 4
 ) -> dict[str, Any]:
-    base = check_v2_2(require_gpu, expected_gpu_count)
+    base = check_v2_2(
+        require_gpu,
+        expected_gpu_count,
+        require_runtime_overlay=False,
+    )
     checks = list(base["checks"])
 
     adaptive_path = ROOT / "configs/four_h20/agent-slo-kv-adaptive-v2-3.yaml"
