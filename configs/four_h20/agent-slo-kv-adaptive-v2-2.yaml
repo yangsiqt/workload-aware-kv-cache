@@ -7,7 +7,7 @@ kv_fixed_min_retrieve_tokens: 4096
 cache_tier_controller_url: http://127.0.0.1:9000
 cache_tier_tokenizer_path: /root/autodl-fs/models/Qwen3-30B-A3B-Instruct-2507
 cache_tier_lookup_timeout_s: 0.5
-cache_tier_route_wait_timeout_s: 0.2
+cache_tier_route_wait_timeout_s: 0.3
 cache_tier_lookup_workers: 2
 cache_tier_stale_after_s: 1.0
 cache_instance_backend_map:

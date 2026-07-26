@@ -101,6 +101,61 @@ def test_activation_gate_counts_real_path_changes(tmp_path: Path) -> None:
     assert report["external_actual_hit_rate"] == 1.0
 
 
+def test_activation_gate_counts_confirmed_avoidance_of_external_restore(
+    tmp_path: Path,
+) -> None:
+    row = _joined_row(0, changed=True)
+    context = row["attempts"][0]["decision"]["v2_context"]
+    context["adaptive"] = {"backend_url": "a", "kv_path": "local_hbm"}
+    context["fixed"] = {"backend_url": "b", "kv_path": "mooncake_l2"}
+    row["attempts"][0]["worker_events"] = [
+        {
+            "phase": "scheduler_seen",
+            "backend_generation": "boot:0",
+            "vllm_cached_tokens": 8192,
+        },
+        {"phase": "request_finished", "actual_kv_path": "local_hbm"},
+    ]
+    path = tmp_path / "joined.jsonl"
+    write_jsonl(path, [row])
+    report = validate_activation(
+        path,
+        expected_rows=1,
+        min_overrides=1,
+        min_path_changes=1,
+        min_external_overrides=1,
+        min_external_hit_rate=0.95,
+    )
+    assert report["passed"]
+    assert report["external_path_changes"] == 1
+    assert report["adaptive_external_overrides"] == 0
+
+
+def test_actual_path_prefers_tier_specific_load_completion(tmp_path: Path) -> None:
+    row = _joined_row(0, changed=True)
+    row["attempts"][0]["worker_events"].extend(
+        [
+            {"phase": "load_completed", "actual_kv_path": "lmcache_l1"},
+            {
+                "phase": "request_finished",
+                "actual_kv_path": "lmcache_external",
+            },
+        ]
+    )
+    path = tmp_path / "joined.jsonl"
+    write_jsonl(path, [row])
+    report = validate_activation(
+        path,
+        expected_rows=1,
+        min_overrides=1,
+        min_path_changes=1,
+        min_external_overrides=1,
+        min_external_hit_rate=0.95,
+    )
+    assert report["passed"]
+    assert report["adaptive_external_actual_hits"] == 1
+
+
 def test_activation_gate_rejects_worker_path_mismatch(tmp_path: Path) -> None:
     path = tmp_path / "joined.jsonl"
     write_jsonl(path, [_joined_row(0, changed=True, hit=False)])

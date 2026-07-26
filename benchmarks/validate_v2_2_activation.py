@@ -11,10 +11,17 @@ EXTERNAL_PATHS = {"lmcache_l1", "mooncake_l2"}
 
 
 def _actual_path(events: list[dict[str, Any]]) -> str:
-    for phase in ("request_finished", "load_completed", "lookup_completed"):
+    # request_finished may intentionally retain the generic
+    # ``lmcache_external`` marker. Prefer the tier-specific load result.
+    for phase in ("load_completed", "request_finished", "lookup_completed"):
         for event in reversed(events):
-            if event.get("phase") == phase and event.get("actual_kv_path"):
-                return str(event["actual_kv_path"])
+            actual_path = str(event.get("actual_kv_path", ""))
+            if (
+                event.get("phase") == phase
+                and actual_path
+                and actual_path not in {"pending", "lmcache_external"}
+            ):
+                return actual_path
     scheduler = next(
         (event for event in reversed(events) if event.get("phase") == "scheduler_seen"),
         None,
@@ -32,8 +39,10 @@ def activation_metrics(joined_path: Path) -> dict[str, Any]:
     rows = list(read_jsonl(joined_path))
     overrides = 0
     path_changes = 0
-    external_overrides = 0
-    external_hits = 0
+    external_path_changes = 0
+    external_path_changes_confirmed = 0
+    adaptive_external_overrides = 0
+    adaptive_external_hits = 0
     mismatches: list[str] = []
     generation_rows = 0
     refresh_attempts = 0
@@ -75,20 +84,45 @@ def activation_metrics(joined_path: Path) -> dict[str, Any]:
             and bool(event.get("backend_generation"))
             for event in events
         )
+        external_involved = changed and bool(
+            {adaptive_path, fixed_path} & EXTERNAL_PATHS
+        )
+        if external_involved:
+            external_path_changes += 1
+            external_path_changes_confirmed += selected_matches_actual
         if overridden and adaptive_path in EXTERNAL_PATHS:
-            external_overrides += 1
+            adaptive_external_overrides += 1
             if actual_path == adaptive_path:
-                external_hits += 1
+                adaptive_external_hits += 1
 
     return {
         "schema_version": "2.2",
         "joined_rows": len(rows),
         "adaptive_overrides": overrides,
         "kv_path_changes": path_changes,
-        "external_overrides": external_overrides,
-        "external_actual_hits": external_hits,
+        # Keep legacy names for report/CLI compatibility. V2.2 treats either
+        # entering an external tier or avoiding an external restore as an
+        # external-involved path change.
+        "external_overrides": external_path_changes,
+        "external_actual_hits": external_path_changes_confirmed,
         "external_actual_hit_rate": (
-            external_hits / external_overrides if external_overrides else None
+            external_path_changes_confirmed / external_path_changes
+            if external_path_changes
+            else None
+        ),
+        "external_path_changes": external_path_changes,
+        "external_path_changes_confirmed": external_path_changes_confirmed,
+        "external_path_change_confirmation_rate": (
+            external_path_changes_confirmed / external_path_changes
+            if external_path_changes
+            else None
+        ),
+        "adaptive_external_overrides": adaptive_external_overrides,
+        "adaptive_external_actual_hits": adaptive_external_hits,
+        "adaptive_external_actual_hit_rate": (
+            adaptive_external_hits / adaptive_external_overrides
+            if adaptive_external_overrides
+            else None
         ),
         "scheduler_generation_rows": generation_rows,
         "cache_tier_refresh_attempts": refresh_attempts,
@@ -123,10 +157,10 @@ def validate_activation(
     if report["kv_path_changes"] < min_path_changes:
         failures.append("KV path change count below gate")
     if report["external_overrides"] < min_external_overrides:
-        failures.append("external override count below gate")
+        failures.append("external-involved path change count below gate")
     rate = report["external_actual_hit_rate"]
     if report["external_overrides"] and (rate is None or rate < min_external_hit_rate):
-        failures.append("external override actual-hit rate below gate")
+        failures.append("external-involved path change confirmation rate below gate")
     if report["path_mismatches"]:
         failures.append("selected/actual path mismatch")
     refresh_coverage = report["cache_tier_refresh_attempts"] / max(
