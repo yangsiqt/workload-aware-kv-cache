@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 from benchmarks import analyze_v2_3_pair
+
+
+ROOT = Path("/root/workload-aware-kv-cache")
 
 
 def _run_metrics(*, adaptive: bool) -> dict:
@@ -66,3 +71,20 @@ def test_v2_3_replicated_gate_requires_independent_trace(monkeypatch) -> None:
     )
     assert report["passed"]
     assert report["metrics"]["mean_e2e_p99_improvement"] == 0.2
+
+
+def test_v2_3_single_h20_smoke_configuration() -> None:
+    router = yaml.safe_load(
+        (ROOT / "configs/v2_3_single_h20/agent-slo-adaptive.yaml").read_text()
+    )
+    lmcache = yaml.safe_load(
+        (ROOT / "configs/v2_3_single_h20/lmcache.yaml").read_text()
+    )
+
+    assert router["kv_policy"] == "adaptive_v2_3"
+    assert router["v2_decode_tokens_per_s"] == 60.0
+    assert router["cache_instance_backend_map"] == {
+        "v2-3-single-h20": "http://127.0.0.1:8000"
+    }
+    assert lmcache["max_local_cpu_size"] == 8.0
+    assert lmcache["extra_config"]["global_segment_size"] == 25_769_803_776
