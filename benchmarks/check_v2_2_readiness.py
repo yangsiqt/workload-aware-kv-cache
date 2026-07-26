@@ -90,8 +90,8 @@ def check_readiness(
     )
     add(
         "shared_cache_visibility_plane",
-        config.get("cache_tier_route_wait_timeout_s") == 0.3
-        and fixed.get("cache_tier_route_wait_timeout_s") == 0.3
+        config.get("cache_tier_route_wait_timeout_s") == 0.5
+        and fixed.get("cache_tier_route_wait_timeout_s") == 0.5
         and config.get("vllm_kv_event_endpoints")
         == fixed.get("vllm_kv_event_endpoints")
         and len(config.get("vllm_kv_event_endpoints", {})) == 4,
