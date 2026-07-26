@@ -47,7 +47,9 @@ def activation_metrics(joined_path: Path) -> dict[str, Any]:
     generation_rows = 0
     refresh_attempts = 0
     refresh_failures = 0
+    hbm_event_rows_raw = 0
     hbm_event_rows = 0
+    hbm_event_eligible_rows = 0
     for row in rows:
         attempts = row.get("attempts") or []
         if not attempts:
@@ -57,10 +59,19 @@ def activation_metrics(joined_path: Path) -> dict[str, Any]:
         refresh = decision.get("cache_tier_refresh") or {}
         refresh_attempts += bool(refresh.get("attempted"))
         refresh_failures += bool(refresh.get("timed_out") or refresh.get("error"))
-        hbm_event_rows += any(
+        has_hbm_event = any(
             candidate.get("cache_source") == "vllm_kv_event"
             for candidate in decision.get("candidates") or []
         )
+        hbm_event_rows_raw += has_hbm_event
+        raw_turn_id = (row.get("client") or {}).get("turn_id")
+        try:
+            hbm_event_eligible = raw_turn_id is None or int(raw_turn_id) > 0
+        except (TypeError, ValueError):
+            hbm_event_eligible = True
+        if hbm_event_eligible:
+            hbm_event_eligible_rows += 1
+            hbm_event_rows += has_hbm_event
         context = decision.get("v2_context") or {}
         adaptive = context.get("adaptive") or {}
         fixed = context.get("fixed") or {}
@@ -77,7 +88,14 @@ def activation_metrics(joined_path: Path) -> dict[str, Any]:
         actual_path = _actual_path(events)
         selected_matches_actual = bool(actual_path) and actual_path == adaptive_path
         path_changes += changed and adaptive_path != fixed_path and selected_matches_actual
-        if overridden and not selected_matches_actual:
+        expected_external_miss_fallback = adaptive_path in EXTERNAL_PATHS and any(
+            event.get("fallback_reason") == "external_miss" for event in events
+        )
+        if (
+            overridden
+            and not selected_matches_actual
+            and not expected_external_miss_fallback
+        ):
             mismatches.append(str(decision.get("decision_id", "")))
         generation_rows += any(
             event.get("phase") == "scheduler_seen"
@@ -131,7 +149,13 @@ def activation_metrics(joined_path: Path) -> dict[str, Any]:
             refresh_failures / refresh_attempts if refresh_attempts else None
         ),
         "hbm_event_rows": hbm_event_rows,
-        "hbm_event_coverage": hbm_event_rows / len(rows) if rows else 0.0,
+        "hbm_event_rows_raw": hbm_event_rows_raw,
+        "hbm_event_eligible_rows": hbm_event_eligible_rows,
+        "hbm_event_coverage": (
+            hbm_event_rows / hbm_event_eligible_rows
+            if hbm_event_eligible_rows
+            else 0.0
+        ),
         "path_mismatches": mismatches,
     }
 

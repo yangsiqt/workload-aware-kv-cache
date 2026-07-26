@@ -156,6 +156,63 @@ def test_actual_path_prefers_tier_specific_load_completion(tmp_path: Path) -> No
     assert report["adaptive_external_actual_hits"] == 1
 
 
+def test_external_miss_fallback_is_not_a_path_mismatch(tmp_path: Path) -> None:
+    row = _joined_row(0, changed=True)
+    row["attempts"][0]["worker_events"] = [
+        {
+            "phase": "scheduler_seen",
+            "backend_generation": "boot:0",
+            "vllm_cached_tokens": 0,
+        },
+        {
+            "phase": "lookup_completed",
+            "actual_kv_path": "recompute",
+            "fallback_reason": "external_miss",
+        },
+    ]
+    path = tmp_path / "joined.jsonl"
+    write_jsonl(path, [row])
+    report = validate_activation(
+        path,
+        expected_rows=1,
+        min_overrides=1,
+        min_path_changes=0,
+        min_external_overrides=1,
+        min_external_hit_rate=0.0,
+    )
+    assert report["passed"]
+    assert report["path_mismatches"] == []
+    assert report["external_actual_hit_rate"] == 0.0
+
+
+def test_hbm_event_coverage_uses_reuse_eligible_requests(tmp_path: Path) -> None:
+    cold = _joined_row(0, changed=False)
+    warm = _joined_row(1, changed=False)
+    cold["client"] = {"turn_id": 0}
+    warm["client"] = {"turn_id": 1}
+    cold["attempts"][0]["decision"]["candidates"] = [
+        {"cache_source": "none"}
+    ]
+    warm["attempts"][0]["decision"]["candidates"] = [
+        {"cache_source": "vllm_kv_event"}
+    ]
+    path = tmp_path / "joined.jsonl"
+    write_jsonl(path, [cold, warm])
+    report = validate_activation(
+        path,
+        expected_rows=2,
+        min_overrides=0,
+        min_path_changes=0,
+        min_external_overrides=0,
+        min_external_hit_rate=0.95,
+        min_hbm_event_coverage=0.90,
+    )
+    assert report["passed"]
+    assert report["hbm_event_rows_raw"] == 1
+    assert report["hbm_event_eligible_rows"] == 1
+    assert report["hbm_event_coverage"] == 1.0
+
+
 def test_activation_gate_rejects_worker_path_mismatch(tmp_path: Path) -> None:
     path = tmp_path / "joined.jsonl"
     write_jsonl(path, [_joined_row(0, changed=True, hit=False)])
