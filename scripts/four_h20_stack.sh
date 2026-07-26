@@ -239,6 +239,25 @@ reset_caches() {
       curl -fsS -X POST "http://127.0.0.1:$port/reset_prefix_cache?reset_external=$reset_external" >/dev/null
     fi
   done
+  if [[ "$reset_external" == "true" ]]; then
+    # reset_prefix_cache clears the physical LMCache stores, but the
+    # Controller can still expose their previous locations until its async
+    # removal stream catches up.  Make the experiment boundary synchronous so
+    # first-turn requests cannot be routed to stale L1/L2 entries.
+    for gpu in 0 1 2 3; do
+      local location payload
+      for location in LocalCPUBackend RemoteBackend; do
+        payload="{\"instance_id\":\"four-h20-backend-$gpu\",\"location\":\"$location\"}"
+        if [[ "$DRY_RUN" == "1" ]]; then
+          render curl -fsS -X POST -H Content-Type:application/json \
+            -d "$payload" http://127.0.0.1:9000/clear
+        else
+          curl -fsS -X POST -H 'Content-Type: application/json' \
+            -d "$payload" http://127.0.0.1:9000/clear >/dev/null
+        fi
+      done
+    done
+  fi
 }
 
 clear_l1() {
