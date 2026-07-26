@@ -62,6 +62,23 @@ def test_trace_schema_accepts_authoritative_vllm_kv_event_source() -> None:
     assert score.cache_source == "vllm_kv_event"
 
 
+def test_trace_schema_accepts_fail_closed_unverified_hbm_source() -> None:
+    score = CandidateTrace(
+        backend_url="http://127.0.0.1:8000",
+        running=0,
+        waiting=0,
+        cached_tokens=0,
+        cache_source="vllm_event_unverified",
+        cache_confidence=0.0,
+        queue_ms=0.0,
+        prefill_ms=1.0,
+        slo_penalty_ms=0.0,
+        total_ms=1.0,
+        stale=False,
+    )
+    assert score.cache_source == "vllm_event_unverified"
+
+
 def test_lifecycle_validation_uses_causal_cross_file_order() -> None:
     identity = {
         "schema_version": "2.2",

@@ -47,6 +47,7 @@ class CandidateTrace(BaseModel):
         "affinity",
         "vllm_event",
         "vllm_kv_event",
+        "vllm_event_unverified",
         "lmcache_lookup",
         "lmcache_l1",
         "mooncake_l2",
