@@ -112,13 +112,15 @@ def analyze_pair(fixed_dir: Path, adaptive_dir: Path) -> dict[str, Any]:
         failures.append("long-prefix subgroup E2E p90 improvement below 10%")
     return {
         "schema_version": "2.2",
+        "scenario": "COHORT30_HOTSET",
         "fixed": fixed,
         "adaptive": adaptive,
         "activation": activation,
         "metrics": metrics,
         "failures": failures,
         "passed": not failures,
-        "result_scope": "FOUR_H20_ONLY",
+        "result_scope": "FOUR_H20_COHORT30_HOTSET",
+        "cross_trace_comparable": False,
     }
 
 
