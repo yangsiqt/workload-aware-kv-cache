@@ -13,7 +13,10 @@ while (($#)); do
   esac
   shift
 done
-TAG="${TAG:-v2-2-$(date -u +%Y%m%dT%H%M%SZ)}"
+VERSION_LABEL="${FOUR_H20_VERSION_LABEL:-V2.2}"
+RUN_NAME_VERSION="${FOUR_H20_RUN_NAME_VERSION:-V22}"
+TAG_PREFIX="${FOUR_H20_TAG_PREFIX:-v2-2}"
+TAG="${TAG:-$TAG_PREFIX-$(date -u +%Y%m%dT%H%M%SZ)}"
 
 ROOT="${PROJECT_ROOT:-/root/workload-aware-kv-cache}"
 export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
@@ -24,7 +27,8 @@ TRACE_ROOT="${FOUR_H20_TRACE_ROOT:-/root/workload-aware-kv-cache-data/traces/fou
 DATA="${FOUR_H20_DATA_ROOT:-/root/workload-aware-kv-cache-data/processed/four_h20}"
 RESULT_ROOT="${RESULT_ROOT:-/root/performance-results/workload-aware-kv-cache/four-h20/adaptive-kv-v2-2}"
 LOG_ROOT="${FOUR_H20_LOG_ROOT:-/root/log/workload-aware-kv-cache/four-h20}"
-CONTROL="$RUN_ROOT/V22-window-$TAG"
+CONTROL_PREFIX="${FOUR_H20_CONTROL_PREFIX:-V22-window}"
+CONTROL="$RUN_ROOT/$CONTROL_PREFIX-$TAG"
 COMPLETED="$CONTROL/completed"
 ACTIVE_FILE="$CONTROL/active-seconds"
 PAIR_FILE="$CONTROL/formal-pair-attempt"
@@ -32,13 +36,20 @@ HARD_LIMIT_S="${FOUR_H20_HARD_LIMIT_S:-18000}"
 STARTED="$(date +%s)"
 BASE_ACTIVE=0
 PAIR_ATTEMPT=1
-ADAPTIVE_TEMPLATE="$ROOT/configs/four_h20/agent-slo-kv-adaptive-v2-2.yaml"
-FIXED_CONFIG="$ROOT/configs/four_h20/agent-slo-kv-fixed-4096-v2-2.yaml"
-ADAPTIVE_FROZEN="$CONTROL/adaptive-v2-2-frozen.yaml"
+ADAPTIVE_TEMPLATE="${FOUR_H20_ADAPTIVE_TEMPLATE:-$ROOT/configs/four_h20/agent-slo-kv-adaptive-v2-2.yaml}"
+FIXED_CONFIG="${FOUR_H20_FIXED_CONFIG:-$ROOT/configs/four_h20/agent-slo-kv-fixed-4096-v2-2.yaml}"
+ADAPTIVE_FROZEN_NAME="${FOUR_H20_ADAPTIVE_FROZEN_NAME:-adaptive-v2-2-frozen.yaml}"
+ADAPTIVE_FROZEN="$CONTROL/$ADAPTIVE_FROZEN_NAME"
+READINESS_SCRIPT="${FOUR_H20_READINESS_SCRIPT:-$ROOT/scripts/check_v2_2_readiness.sh}"
+RECORD_MODULE="${FOUR_H20_RECORD_MODULE:-benchmarks.record_v2_2_stage}"
+ANALYZE_MODULE="${FOUR_H20_ANALYZE_MODULE:-benchmarks.analyze_v2_2_pair}"
+PAIR_REPORT_NAME="${FOUR_H20_PAIR_REPORT_NAME:-v2-2-pair-report.json}"
+EXTRA_VLLM_METRIC="${FOUR_H20_EXTRA_VLLM_METRIC:-}"
 THRESHOLD_REPORT="$CONTROL/threshold-selection.json"
 CAL_WORKLOAD="$TRACE_ROOT/v2-2-calibration-workload-cohort30.jsonl"
 CAL_TRACE="$TRACE_ROOT/v2-2-calibration-cohort30-bursty-2.5rps.jsonl"
 FORMAL_TRACE="$TRACE_ROOT/v2-2-formal-cohort30-bursty-2.5rps.jsonl"
+REPLICATE_TRACE="${FOUR_H20_REPLICATE_TRACE:-}"
 WORKLOAD="$DATA/swebench.jsonl"
 STACK_STARTED=0
 CURRENT_STAGE=""
@@ -56,17 +67,17 @@ fi
 elapsed() { echo $((BASE_ACTIVE + $(date +%s) - STARTED)); }
 remaining() {
   local value=$((HARD_LIMIT_S - $(elapsed)))
-  ((value > 0)) || { echo "V2.2 cumulative five-hour limit reached" >&2; return 1; }
+  ((value > 0)) || { echo "$VERSION_LABEL cumulative five-hour limit reached" >&2; return 1; }
   echo "$value"
 }
 done_stage() { [[ "$DRY_RUN" == 0 && -f "$COMPLETED/$1" ]]; }
 mark_stage() {
   [[ "$DRY_RUN" == 1 ]] || touch "$COMPLETED/$1"
   if [[ "$DRY_RUN" == 0 ]]; then
-    python -m benchmarks.record_v2_2_stage --tag "$TAG" --stage "$1" \
+    python -m "$RECORD_MODULE" --tag "$TAG" --stage "$1" \
       --status PASS --detail "$2"
   fi
-  echo "V2.2 stage $1 PASS: $2"
+  echo "$VERSION_LABEL stage $1 PASS: $2"
 }
 run_stage() {
   if [[ "$DRY_RUN" == 1 ]]; then
@@ -98,6 +109,7 @@ validate_live_stack() {
     "vllm:kv_cache_free_blocks"
     "vllm:kv_cache_total_blocks"
   )
+  [[ -n "$EXTRA_VLLM_METRIC" ]] && vllm_metrics+=("$EXTRA_VLLM_METRIC")
   local -a mooncake_metrics=(
     "mooncake_transfer_inflight_read_operations"
     "mooncake_transfer_inflight_read_bytes"
@@ -134,12 +146,13 @@ finish() {
   if [[ "$DRY_RUN" == 0 ]]; then
     echo "$(elapsed)" >"$ACTIVE_FILE"
     if ((status != 0)) && [[ -n "$CURRENT_STAGE" ]]; then
-      python -m benchmarks.record_v2_2_stage --tag "$TAG" \
+      python -m "$RECORD_MODULE" --tag "$TAG" \
         --stage "$CURRENT_STAGE" --status FAIL \
         --detail "节点失败，已停止服务并保留现有证据。" || true
     fi
-    if ((status != 0)) && [[ "$CURRENT_STAGE" =~ ^K0[45]$ ]]; then
-      rm -f "$COMPLETED/K04" "$COMPLETED/K05"
+    if ((status != 0)) && [[ "$CURRENT_STAGE" =~ ^K0[45]R?$ ]]; then
+      rm -f "$COMPLETED/K04" "$COMPLETED/K05" \
+        "$COMPLETED/K04R" "$COMPLETED/K05R"
       PAIR_ATTEMPT=$((PAIR_ATTEMPT + 1))
       echo "$PAIR_ATTEMPT" >"$PAIR_FILE"
     fi
@@ -152,17 +165,17 @@ trap finish EXIT INT TERM
 if ! done_stage F00; then
   CURRENT_STAGE=F00
   if [[ "$DRY_RUN" == 1 ]]; then
-    "$ROOT/scripts/check_v2_2_readiness.sh"
+    "$READINESS_SCRIPT"
   else
-    "$ROOT/scripts/check_v2_2_readiness.sh" --require-gpu \
+    "$READINESS_SCRIPT" --require-gpu \
       --output "$CONTROL/readiness.json"
   fi
   ensure_stack
   validate_live_stack
-  mark_stage F00 "四Backend启动；max_num_seqs=12；V2.2静态与GPU门禁通过。"
+  mark_stage F00 "四Backend启动；max_num_seqs=12；$VERSION_LABEL静态与GPU门禁通过。"
 fi
 
-CAL_DEFAULT="V22K01-calibration-default-$TAG"
+CAL_DEFAULT="${RUN_NAME_VERSION}K01-calibration-default-$TAG"
 if ! done_stage K01; then
   CURRENT_STAGE=K01
   ensure_stack
@@ -179,7 +192,7 @@ if ! done_stage K01; then
     recalibrate="$(python -c 'import json,sys; print(str(json.load(open(sys.argv[1]))["requires_one_recalibration"]).lower())' "$THRESHOLD_REPORT")"
     validation_run="$CAL_DEFAULT"
     if [[ "$recalibrate" == true ]]; then
-      validation_run="V22K01-calibration-recalibrated-$TAG"
+      validation_run="${RUN_NAME_VERSION}K01-calibration-recalibrated-$TAG"
       MIN_SUCCESS_RATE=1 REQUIRE_V2_2_WORKER_LIFECYCLE=true run_stage "$validation_run" kv \
         "$ADAPTIVE_FROZEN" "$CAL_WORKLOAD" poisson 64 "$CAL_TRACE"
     fi
@@ -193,12 +206,12 @@ if ! done_stage K01; then
 fi
 
 if [[ "$DRY_RUN" == 0 && ! -f "$ADAPTIVE_FROZEN" ]]; then
-  echo "missing frozen V2.2 adaptive config: $ADAPTIVE_FROZEN" >&2
+  echo "missing frozen $VERSION_LABEL adaptive config: $ADAPTIVE_FROZEN" >&2
   exit 1
 fi
 [[ "$DRY_RUN" == 1 ]] && ADAPTIVE_FROZEN="$ADAPTIVE_TEMPLATE"
 
-FIXED_RUN="V22K04-fixed-before-2.5rps-$TAG-p$PAIR_ATTEMPT"
+FIXED_RUN="${RUN_NAME_VERSION}K04-fixed-before-2.5rps-$TAG-p$PAIR_ATTEMPT"
 if ! done_stage K04; then
   CURRENT_STAGE=K04
   ensure_stack
@@ -207,13 +220,30 @@ if ! done_stage K04; then
   mark_stage K04 "fixed-4096 Before 1200请求完成；不单独形成结论。"
 fi
 
-ADAPTIVE_RUN="V22K05-adaptive-after-2.5rps-$TAG-p$PAIR_ATTEMPT"
+ADAPTIVE_RUN="${RUN_NAME_VERSION}K05-adaptive-after-2.5rps-$TAG-p$PAIR_ATTEMPT"
 if ! done_stage K05; then
   CURRENT_STAGE=K05
   ensure_stack
   REQUIRE_V2_2_WORKER_LIFECYCLE=true run_stage "$ADAPTIVE_RUN" kv \
     "$ADAPTIVE_FROZEN" "$WORKLOAD" poisson 64 "$FORMAL_TRACE"
-  mark_stage K05 "Adaptive V2.2 After 1200请求完成；等待配对门禁。"
+  mark_stage K05 "Adaptive $VERSION_LABEL After 1200请求完成；等待配对门禁。"
+fi
+
+FIXED_REPLICATE_RUN="${RUN_NAME_VERSION}K04R-fixed-replicate-2.5rps-$TAG-p$PAIR_ATTEMPT"
+ADAPTIVE_REPLICATE_RUN="${RUN_NAME_VERSION}K05R-adaptive-replicate-2.5rps-$TAG-p$PAIR_ATTEMPT"
+if [[ -n "$REPLICATE_TRACE" ]] && ! done_stage K04R; then
+  CURRENT_STAGE=K04R
+  ensure_stack
+  REQUIRE_V2_2_WORKER_LIFECYCLE=true run_stage "$FIXED_REPLICATE_RUN" kv \
+    "$FIXED_CONFIG" "$WORKLOAD" poisson 64 "$REPLICATE_TRACE"
+  mark_stage K04R "fixed-4096独立Arrival Trace复验完成；不单独形成结论。"
+fi
+if [[ -n "$REPLICATE_TRACE" ]] && ! done_stage K05R; then
+  CURRENT_STAGE=K05R
+  ensure_stack
+  REQUIRE_V2_2_WORKER_LIFECYCLE=true run_stage "$ADAPTIVE_REPLICATE_RUN" kv \
+    "$ADAPTIVE_FROZEN" "$WORKLOAD" poisson 64 "$REPLICATE_TRACE"
+  mark_stage K05R "Adaptive独立Arrival Trace复验完成；等待双Trace门禁。"
 fi
 
 if ! done_stage K07; then
@@ -221,11 +251,21 @@ if ! done_stage K07; then
   if [[ "$DRY_RUN" == 1 ]]; then
     echo "DRY-RUN: validate activation and analyze paired formal results"
   else
-    output="$RESULT_ROOT/$TAG/v2-2-pair-report.json"
+    output="$RESULT_ROOT/$TAG/$PAIR_REPORT_NAME"
     mkdir -p "$(dirname "$output")"
-    python -m benchmarks.analyze_v2_2_pair \
-      --fixed "$RUN_ROOT/$FIXED_RUN" --adaptive "$RUN_ROOT/$ADAPTIVE_RUN" \
+    analyze_command=(
+      python -m "$ANALYZE_MODULE"
+      --fixed "$RUN_ROOT/$FIXED_RUN"
+      --adaptive "$RUN_ROOT/$ADAPTIVE_RUN"
       --output "$output"
+    )
+    if [[ -n "$REPLICATE_TRACE" ]]; then
+      analyze_command+=(
+        --replicate-fixed "$RUN_ROOT/$FIXED_REPLICATE_RUN"
+        --replicate-adaptive "$RUN_ROOT/$ADAPTIVE_REPLICATE_RUN"
+      )
+    fi
+    "${analyze_command[@]}"
   fi
   mark_stage K07 "公平配对、激活和性能门禁完成；结论以四卡报告为准。"
 fi

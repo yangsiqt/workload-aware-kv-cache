@@ -27,9 +27,18 @@ class CandidateTrace(BaseModel):
     waiting_prefill_tokens: int = Field(default=0, ge=0)
     running_prefill_tokens: int = Field(default=0, ge=0)
     reserved_prefill_tokens: int = Field(default=0, ge=0)
+    reserved_decode_tokens: int = Field(default=0, ge=0)
     reserved_external_load_ms: float = Field(default=0, ge=0)
     reserved_kv_blocks: int = Field(default=0, ge=0)
     active_decode_sequences: int = Field(default=0, ge=0)
+    remaining_decode_tokens: int = Field(default=0, ge=0)
+    decode_backlog_tokens: int = Field(default=0, ge=0)
+    decode_queue_ms: float = Field(default=0, ge=0)
+    decode_tokens_per_s: float = Field(default=0, ge=0)
+    decode_throughput_samples: int = Field(default=0, ge=0)
+    decode_cost_source: Literal[
+        "legacy", "backend_ewma", "global_ewma", "frozen"
+    ] = "legacy"
     scheduled_prefill_tokens: int = Field(default=0, ge=0)
     scheduled_decode_tokens: int = Field(default=0, ge=0)
     skipped_waiting_prefill_tokens: int = Field(default=0, ge=0)
@@ -39,6 +48,7 @@ class CandidateTrace(BaseModel):
     preemptions_total: int = Field(default=0, ge=0)
     workload_metrics_available: bool = False
     v2_1_metrics_available: bool = False
+    v2_3_metrics_available: bool = False
     cached_tokens: int = Field(ge=0)
     local_hbm_cached_tokens: int = Field(default=0, ge=0)
     required_kv_blocks: int = Field(default=0, ge=0)
@@ -65,7 +75,9 @@ class CandidateTrace(BaseModel):
 class RouteTraceEvent(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    schema_version: Literal["1.0", "1.1", "1.2", "2.0", "2.1", "2.2"] = "1.2"
+    schema_version: Literal[
+        "1.0", "1.1", "1.2", "2.0", "2.1", "2.2", "2.3"
+    ] = "1.2"
     event: Literal["decision", "completion"]
     request_id: str
     attempt_id: int = Field(default=0, ge=0)

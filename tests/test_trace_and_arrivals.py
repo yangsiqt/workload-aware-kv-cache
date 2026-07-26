@@ -169,6 +169,36 @@ def test_trace_schema_accepts_v2_1_scheduler_capacity_metrics() -> None:
     assert event.candidates[0].v2_1_metrics_available is True
 
 
+def test_trace_schema_accepts_v2_3_decode_workload_metrics() -> None:
+    row = route_event("request", "decision")
+    row["schema_version"] = "2.3"
+    row["candidates"][0].update(
+        {
+            "remaining_decode_tokens": 384,
+            "reserved_decode_tokens": 128,
+            "decode_backlog_tokens": 512,
+            "decode_queue_ms": 8000.0,
+            "decode_tokens_per_s": 64.0,
+            "decode_cost_source": "backend_ewma",
+        }
+    )
+    row["v2_context"] = {
+        "version": "2.3",
+        "fixed": {
+            "policy_total_ms": 624.0,
+            "counterfactual_total_ms": 9120.0,
+        },
+    }
+
+    event = RouteTraceEvent.model_validate(row)
+
+    candidate = event.candidates[0]
+    assert event.schema_version == "2.3"
+    assert candidate.decode_backlog_tokens == 512
+    assert candidate.decode_cost_source == "backend_ewma"
+    assert event.v2_context["fixed"]["counterfactual_total_ms"] == 9120.0
+
+
 def test_arrival_traces_are_reproducible_and_cover_workload(tmp_path: Path) -> None:
     workload = tmp_path / "workload.jsonl"
     write_jsonl(

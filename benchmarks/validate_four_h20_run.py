@@ -22,6 +22,7 @@ def validate_run(
     required_execution_modes: set[str] | None = None,
     require_v2_1_worker_lifecycle: bool = False,
     require_v2_2_worker_lifecycle: bool = False,
+    require_v2_3_worker_lifecycle: bool = False,
 ) -> dict[str, Any]:
     workload_ids = {str(row["request_id"]) for row in read_jsonl(workload)}
     requests = list(read_jsonl(run_dir / "requests.jsonl"))
@@ -108,7 +109,9 @@ def validate_run(
     if len(joined_ids) != len(set(joined_ids)) or set(joined_ids) != workload_ids:
         failures.append("joined Trace IDs do not exactly match workload")
     require_worker_lifecycle = (
-        require_v2_1_worker_lifecycle or require_v2_2_worker_lifecycle
+        require_v2_1_worker_lifecycle
+        or require_v2_2_worker_lifecycle
+        or require_v2_3_worker_lifecycle
     )
     if require_worker_lifecycle:
         if scheduler_seen_attempts != lifecycle_attempts:
@@ -132,7 +135,9 @@ def validate_run(
 
     report = {
         "schema_version": (
-            "2.2"
+            "2.3"
+            if require_v2_3_worker_lifecycle
+            else "2.2"
             if require_v2_2_worker_lifecycle
             else "2.1"
             if require_v2_1_worker_lifecycle
@@ -172,6 +177,7 @@ def main() -> None:
     parser.add_argument("--require-execution-modes", default="")
     parser.add_argument("--require-v2-1-worker-lifecycle", action="store_true")
     parser.add_argument("--require-v2-2-worker-lifecycle", action="store_true")
+    parser.add_argument("--require-v2-3-worker-lifecycle", action="store_true")
     args = parser.parse_args()
     report = validate_run(
         args.run_dir,
@@ -182,6 +188,7 @@ def main() -> None:
         required_execution_modes=_csv_set(args.require_execution_modes),
         require_v2_1_worker_lifecycle=args.require_v2_1_worker_lifecycle,
         require_v2_2_worker_lifecycle=args.require_v2_2_worker_lifecycle,
+        require_v2_3_worker_lifecycle=args.require_v2_3_worker_lifecycle,
     )
     print(json.dumps(report, indent=2, sort_keys=True))
 
