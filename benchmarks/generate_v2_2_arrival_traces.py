@@ -123,7 +123,11 @@ def generate_trace(
     ]
 
 
-def generate(workload: Path, output_dir: Path) -> dict[str, Path]:
+def generate(
+    workload: Path, output_dir: Path, *, cohort_size: int = 60
+) -> dict[str, Path]:
+    if cohort_size <= 0:
+        raise ValueError("cohort_size must be positive")
     rows = [
         row
         for row in read_jsonl(workload)
@@ -144,13 +148,21 @@ def generate(workload: Path, output_dir: Path) -> dict[str, Path]:
         "replicate": (rows, 54),
     }
     output_dir.mkdir(parents=True, exist_ok=True)
-    calibration_workload = output_dir / "v2-2-calibration-workload.jsonl"
+    calibration_workload = (
+        output_dir / f"v2-2-calibration-workload-cohort{cohort_size}.jsonl"
+    )
     write_jsonl(calibration_workload, profiles["calibration"][0])
     paths: dict[str, Path] = {}
     trace_records = []
     for name, (profile, seed) in profiles.items():
-        path = output_dir / f"v2-2-{name}-cohort-bursty-2.5rps.jsonl"
-        write_jsonl(path, generate_trace(profile, seed=seed))
+        path = (
+            output_dir
+            / f"v2-2-{name}-cohort{cohort_size}-bursty-2.5rps.jsonl"
+        )
+        write_jsonl(
+            path,
+            generate_trace(profile, seed=seed, cohort_size=cohort_size),
+        )
         paths[name] = path
         trace_records.append(
             {
@@ -167,10 +179,10 @@ def generate(workload: Path, output_dir: Path) -> dict[str, Path]:
         "workload_path": str(workload.resolve()),
         "workload_sha256": sha256_file(workload),
         "ordering": (
-            "60-session active cohorts; turns ordered within each cohort; "
+            f"{cohort_size}-session active cohorts; turns ordered within each cohort; "
             "sessions shuffled independently per turn"
         ),
-        "cohort_size": 60,
+        "cohort_size": cohort_size,
         "rate_pattern": {
             "high_rps": 3.5,
             "low_rps": 1.5,
@@ -184,8 +196,9 @@ def generate(workload: Path, output_dir: Path) -> dict[str, Path]:
         },
         "traces": trace_records,
     }
-    write_json(output_dir / "manifest.json", manifest)
-    paths["manifest"] = output_dir / "manifest.json"
+    manifest_path = output_dir / f"manifest-cohort{cohort_size}.json"
+    write_json(manifest_path, manifest)
+    paths["manifest"] = manifest_path
     return paths
 
 
@@ -193,8 +206,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Generate V2.2 wave/bursty traces")
     parser.add_argument("workload", type=Path)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--cohort-size", type=int, default=60)
     args = parser.parse_args()
-    paths = generate(args.workload, args.output_dir)
+    paths = generate(
+        args.workload,
+        args.output_dir,
+        cohort_size=args.cohort_size,
+    )
     print(paths["manifest"])
 
 

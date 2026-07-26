@@ -14,7 +14,7 @@ extra_config: &mooncake
   metadata_server: http://127.0.0.1:8005/metadata
   protocol: tcp
   master_server_address: localhost:50051
-  global_segment_size: 17179869184
+  global_segment_size: 25769803776
   local_buffer_size: 1073741824
   transfer_timeout: 2
   mooncake_enable_client_http_server: true

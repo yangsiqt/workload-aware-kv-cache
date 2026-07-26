@@ -26,9 +26,9 @@ def check_readiness(
         checks.append({"name": name, "passed": bool(passed), "detail": detail})
 
     expected = {
-        "calibration": ("v2-2-calibration-cohort-bursty-2.5rps.jsonl", 180),
-        "formal": ("v2-2-formal-cohort-bursty-2.5rps.jsonl", 1200),
-        "replicate": ("v2-2-replicate-cohort-bursty-2.5rps.jsonl", 1200),
+        "calibration": ("v2-2-calibration-cohort30-bursty-2.5rps.jsonl", 180),
+        "formal": ("v2-2-formal-cohort30-bursty-2.5rps.jsonl", 1200),
+        "replicate": ("v2-2-replicate-cohort30-bursty-2.5rps.jsonl", 1200),
     }
     workload_rows = list(read_jsonl(WORKLOAD))
     add("workload", len(workload_rows) == 1200, sha256_file(WORKLOAD))
@@ -42,22 +42,37 @@ def check_readiness(
             {"rows": len(rows), "sha256": sha256_file(path) if path.exists() else ""},
         )
 
-    calibration_workload = TRACE_ROOT / "v2-2-calibration-workload.jsonl"
+    calibration_workload = TRACE_ROOT / "v2-2-calibration-workload-cohort30.jsonl"
     capacity_inputs = {
         "calibration": (
             calibration_workload,
             TRACE_ROOT / expected["calibration"][0],
+            0.60,
+            0.75,
         ),
-        "formal": (WORKLOAD, TRACE_ROOT / expected["formal"][0]),
+        "formal": (WORKLOAD, TRACE_ROOT / expected["formal"][0], 0.75, 0.90),
     }
-    for name, (profile, trace) in capacity_inputs.items():
-        report = analyze_capacity(profile, trace)
+    for name, (profile, trace, minimum, maximum) in capacity_inputs.items():
+        report = analyze_capacity(profile, trace, capacity_gib=96.0)
         rate = report["simulated_hit_rate_all_requests"]
         add(
             f"simulated_cache_working_set_{name}",
-            0.10 <= rate <= 0.60,
+            minimum <= rate <= maximum,
             report,
         )
+
+    trace_manifest = TRACE_ROOT / "manifest-cohort30.json"
+    manifest = (
+        json.loads(trace_manifest.read_text(encoding="utf-8"))
+        if trace_manifest.exists()
+        else {}
+    )
+    add(
+        "cohort30_manifest",
+        manifest.get("cohort_size") == 30
+        and manifest.get("workload_sha256") == sha256_file(WORKLOAD),
+        str(trace_manifest),
+    )
 
     adaptive = ROOT / "configs/four_h20/agent-slo-kv-adaptive-v2-2.yaml"
     config = yaml.safe_load(adaptive.read_text(encoding="utf-8"))
@@ -84,6 +99,24 @@ def check_readiness(
             "route_wait_s": config.get("cache_tier_route_wait_timeout_s"),
             "event_endpoints": config.get("vllm_kv_event_endpoints"),
         },
+    )
+    lmcache_configs = [
+        yaml.safe_load(
+            (ROOT / f"configs/four_h20/lmcache-backend-{index}.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        for index in range(4)
+    ]
+    add(
+        "cohort30_cache_capacity",
+        all(config.get("max_local_cpu_size") == 8.0 for config in lmcache_configs)
+        and all(
+            config.get("extra_config", {}).get("global_segment_size")
+            == 25_769_803_776
+            for config in lmcache_configs
+        ),
+        {"l1_gib_per_backend": 8, "l2_gib_per_backend": 24},
     )
     required_files = [
         ROOT / "benchmarks/generate_v2_2_arrival_traces.py",

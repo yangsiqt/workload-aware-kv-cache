@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from benchmarks.generate_v2_2_arrival_traces import generate_trace
+from benchmarks.generate_v2_2_arrival_traces import generate, generate_trace
 from benchmarks.analyze_v2_2_cache_working_set import simulate_session_lru
 from benchmarks.io_utils import write_jsonl
 from benchmarks.validate_v2_2_activation import validate_activation
@@ -25,6 +25,27 @@ def test_wave_trace_separates_turns_and_preserves_session_order() -> None:
     assert all(value.endswith("t3") for value in ids[6:])
     assert [item.offset_s for item in trace] == sorted(item.offset_s for item in trace)
     assert abs(trace[-1].offset_s - 9 / 2.5) < 1e-9
+
+
+def test_cohort30_trace_artifacts_are_named_and_manifested(tmp_path: Path) -> None:
+    workload = tmp_path / "workload.jsonl"
+    rows = [
+        {
+            "request_id": f"{bucket}-{session}-t{turn}",
+            "session_id": f"{bucket}-{session}",
+            "turn_id": turn,
+            "dataset_name": "SWE-bench Verified",
+            "shared_prefix_tokens": bucket,
+        }
+        for bucket in (8192, 16384, 32768)
+        for session in range(20)
+        for turn in range(6)
+    ]
+    write_jsonl(workload, rows)
+    paths = generate(workload, tmp_path / "traces", cohort_size=30)
+    assert paths["formal"].name == "v2-2-formal-cohort30-bursty-2.5rps.jsonl"
+    assert paths["manifest"].name == "manifest-cohort30.json"
+    assert paths["manifest"].read_text().count('"cohort_size": 30') == 1
 
 
 def _joined_row(index: int, *, changed: bool, hit: bool = True) -> dict:
