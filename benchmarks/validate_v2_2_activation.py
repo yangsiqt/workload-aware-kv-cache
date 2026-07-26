@@ -86,7 +86,23 @@ def activation_metrics(joined_path: Path) -> dict[str, Any]:
 
         events = final.get("worker_events") or []
         actual_path = _actual_path(events)
-        selected_matches_actual = bool(actual_path) and actual_path == adaptive_path
+        # ``recompute`` is a Router instruction to skip external KV lookup.
+        # vLLM may still find a small local prefix between routing and
+        # scheduler admission.  Reporting that opportunistic HBM reuse as
+        # ``local_hbm`` is compatible with the selected non-external path and
+        # must not be treated as a tier-control violation.
+        recompute_reused_local = (
+            adaptive_path == "recompute"
+            and actual_path == "local_hbm"
+            and any(
+                event.get("phase") == "lookup_completed"
+                and event.get("fallback_reason") == "router_skip"
+                for event in events
+            )
+        )
+        selected_matches_actual = bool(actual_path) and (
+            actual_path == adaptive_path or recompute_reused_local
+        )
         path_changes += changed and adaptive_path != fixed_path and selected_matches_actual
         expected_external_miss_fallback = adaptive_path in EXTERNAL_PATHS and any(
             event.get("fallback_reason") == "external_miss" for event in events

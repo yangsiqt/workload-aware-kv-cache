@@ -185,6 +185,44 @@ def test_external_miss_fallback_is_not_a_path_mismatch(tmp_path: Path) -> None:
     assert report["external_actual_hit_rate"] == 0.0
 
 
+def test_recompute_with_opportunistic_local_prefix_is_not_a_mismatch(
+    tmp_path: Path,
+) -> None:
+    row = _joined_row(0, changed=True)
+    context = row["attempts"][0]["decision"]["v2_context"]
+    context["adaptive"] = {"backend_url": "a", "kv_path": "recompute"}
+    context["fixed"] = {"backend_url": "b", "kv_path": "mooncake_l2"}
+    row["attempts"][0]["worker_events"] = [
+        {
+            "phase": "scheduler_seen",
+            "backend_generation": "boot:0",
+            "vllm_cached_tokens": 64,
+        },
+        {
+            "phase": "lookup_completed",
+            "actual_kv_path": "local_hbm",
+            "fallback_reason": "router_skip",
+        },
+        {
+            "phase": "request_finished",
+            "actual_kv_path": "local_hbm",
+            "fallback_reason": "router_skip",
+        },
+    ]
+    path = tmp_path / "joined.jsonl"
+    write_jsonl(path, [row])
+    report = validate_activation(
+        path,
+        expected_rows=1,
+        min_overrides=1,
+        min_path_changes=1,
+        min_external_overrides=1,
+        min_external_hit_rate=0.95,
+    )
+    assert report["passed"]
+    assert report["path_mismatches"] == []
+
+
 def test_hbm_event_coverage_uses_reuse_eligible_requests(tmp_path: Path) -> None:
     cold = _joined_row(0, changed=False)
     warm = _joined_row(1, changed=False)
