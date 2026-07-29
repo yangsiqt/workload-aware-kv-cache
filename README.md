@@ -1,201 +1,177 @@
 # Workload-aware KV Cache for Long-context Code Agents
 
+English | [中文](README_ZH.md)
+
 [![Tests](https://github.com/yangsiqt/workload-aware-kv-cache/actions/workflows/tests.yml/badge.svg)](https://github.com/yangsiqt/workload-aware-kv-cache/actions/workflows/tests.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-This project studies repeated prefill and cross-instance KV cache misses in
-long-context code-agent serving. It uses Qwen3-30B-A3B-Instruct-2507 with
-vLLM as the primary engine and Production Stack as the routing framework.
+This project studies serving optimization for long-context, multi-turn code
+agents. It combines cache locality with live queue and token-workload signals
+instead of treating the highest prefix-cache hit rate as the only objective.
 
-## Workloads
+The evaluation uses Qwen3-30B-A3B-Instruct-2507 and SWE-bench Verified-derived
+8K/16K/32K sessions on real NVIDIA H20 GPUs. It is a serving-systems benchmark:
+it does not report SWE-bench solve rates and never places gold patches in model
+prompts.
 
-- **SWE-bench Verified** supplies real repository snapshots and issue text for
-  the primary multi-turn code-agent workload.
-- **LongBench RepoBench-P** supplies a standardized repository-level
-  long-context workload.
-- **ShareGPT** supplies a conventional serving baseline compatible with vLLM
-  benchmark tooling.
-- **Controlled prefix** workloads isolate routing and cache-locality effects.
+## Why this project
 
-This is a serving-systems benchmark. It does not report SWE-bench solve rates
-or use gold patches in model prompts.
+A multi-turn code-agent request can reuse a large repository prefix if it
+returns to the same GPU. Strict affinity, however, can overload a hot backend.
+With external KV storage, the router must also decide whether loading from CPU
+L1 or Mooncake L2 is faster than local recomputation.
 
-## Project Status
+This project implements two completed optimization stages:
 
-The data pipeline, asynchronous benchmark client, mock backends, and pre-GPU
-Router implementation are complete. The project extends the Production Stack
-Python Router with an `agent_slo_aware` policy. Results currently tracked in
-this repository are explicitly marked `SIMULATED`; real multi-H20 Before/After
-measurements remain a separate milestone.
+1. **Dual-H20 queue/locality-aware routing**: balance session KV locality
+   against backend queueing.
+2. **Four-H20 Adaptive KV V2.3**: choose a backend and one of Local HBM,
+   LMCache CPU L1, Mooncake L2, or recomputation using live prefill/decode
+   workload and observed execution costs.
 
-## Current Boundary
+## Architecture
 
-Before renting the multi-GPU instance, the project builds and tests the data
-pipeline, benchmark client, router, mock backends, result analysis, and launch
-templates. Mock results are always marked `SIMULATED` and are not performance
-claims.
+```mermaid
+flowchart LR
+    C["Async benchmark client<br/>frozen arrivals and request IDs"]
+    R["Production Stack Router<br/>queue + KV + token cost model"]
+    V["4 × TP1 vLLM backends<br/>scheduler and KV-block telemetry"]
+    L1["LMCache CPU L1"]
+    L2["Mooncake L2"]
 
-## Layout
+    C --> R
+    R --> V
+    V <--> L1
+    V <--> L2
+```
+
+The client, router decision/completion trace, scheduler lifecycle, and worker
+execution events are joined by `request_id + attempt_id + backend_id`.
+Workload, arrival trace, configuration, and component commits are frozen before
+formal Before/After runs.
+
+## Real 2×H20 results
+
+The primary dual-GPU experiment used 50 SWE-bench-derived sessions, six turns
+per session, 300 requests, and one fixed Poisson arrival trace. External KV and
+PD were disabled; the comparison isolates routing over vLLM local prefix cache.
+
+| Policy | TTFT p90 | E2E p90 | Throughput | Token hit | Session migration |
+|---|---:|---:|---:|---:|---:|
+| Official `prefixaware-512` | 3057.1 ms | 6960.2 ms | 1.799 req/s | 83.30% | 0.00% |
+| `agent_slo_aware` | 1526.5 ms | 2182.5 ms | 1.861 req/s | 82.58% | 2.40% |
+| Change | **-50.1%** | **-68.6%** | **+3.4%** | -0.72 pp | +2.40 pp |
+
+In a separate 16K shared-prefix hotspot, `agent_slo_aware` reduced TTFT p90 by
+25.8%, reduced E2E p90 by 21.1%, and improved throughput by 27.1%. The mechanism
+is deliberate: a small, bounded loss of locality is acceptable when it removes
+a much larger queue hotspot.
+
+- [Main dual-H20 comparison](reports/dual-h20/main-r1-comparison.md)
+- [16K hotspot comparison](reports/dual-h20/hotspot-16k-c16-comparison.md)
+
+These are real-GPU, single-trace measurements and do not claim statistical
+confidence intervals.
+
+## Real 4×H20 Adaptive KV V2.3 results
+
+The public result below is the pre-registered primary trace: 1200 requests,
+4×H20 96GB, four TP1 backends, `max_num_seqs=12`, 8 GiB CPU L1 and 24 GiB
+Mooncake L2 per backend, bursty 3.5/1.5 RPS arrivals averaging 2.5 RPS, and
+client concurrency 64.
+
+| Metric | fixed-4096 | Adaptive V2.3 | Change |
+|---|---:|---:|---:|
+| TTFT p50 | 1567.3 ms | 553.6 ms | **-64.7%** |
+| TTFT p90 | 9631.9 ms | 5414.1 ms | **-43.8%** |
+| TTFT p95 | 12420.8 ms | 8124.3 ms | **-34.6%** |
+| TTFT p99 | 18617.3 ms | 12883.5 ms | **-30.8%** |
+| E2E p50 | 3501.4 ms | 1908.4 ms | **-45.5%** |
+| E2E p90 | 16543.8 ms | 13190.5 ms | **-20.3%** |
+| E2E p95 | 19542.8 ms | 17434.5 ms | **-10.8%** |
+| E2E p99 | 27826.5 ms | 21420.7 ms | **-23.0%** |
+| Request throughput | 2.5014 req/s | 2.5013 req/s | -0.002% |
+| SLO Goodput | 1.5008 req/s | 2.0302 req/s | **+35.3%** |
+| SLO violation rate | 40.00% | 18.83% | **-21.17 pp** |
+
+Adaptive V2.3 performed 409 policy overrides and 409 KV-path changes. Its main
+mechanism in this trace was avoiding uncertain or expensive external recovery
+in favor of verified HBM reuse or recomputation; this is not presented as an
+increase in L1/L2 hit rate.
+
+- [Primary-trace report](reports/four-h20/v2.3-primary-trace.md)
+
+Scope: `PRIMARY_TRACE_REAL_4XH20_COHORT30_HOTSET`. These public numbers are a
+single pre-registered trace and are not a cross-trace stability claim.
+
+## Source-level changes
+
+| Component | Main changes |
+|---|---|
+| [Production Stack Router](https://github.com/yangsiqt/production-stack/tree/feature/workload-aware-kv-v2.3) | Queue/locality cost model, HBM/L1/L2/recompute candidates, request/attempt reservations, lifecycle-safe cleanup, decode-backlog EWMA, and fixed-policy counterfactual costing |
+| [vLLM](https://github.com/yangsiqt/vllm/tree/feature/workload-aware-kv-v2.3) | Backend-level scheduled/waiting prefill and decode tokens, remaining decode work, KV-block pressure, prefix-cache generation, and enqueue lifecycle telemetry |
+| [LMCache](https://github.com/yangsiqt/LMCache/tree/feature/workload-aware-kv-v2.3) | Per-request strict L1/L2 retrieval control, explicit fallback, multi-tier residency revisions, and staged actual-path/load feedback |
+| [Mooncake](https://github.com/yangsiqt/Mooncake/tree/feature/workload-aware-kv-v2.3) | Client read bytes, failures, misses, latency, and inflight operation/byte telemetry |
+
+The vLLM work changes scheduler observability and KV connector integration; it
+does not claim a CUDA kernel or core scheduling-algorithm optimization.
+Mooncake is used as an external KV transport/store and its transfer protocol or
+scheduler is not redesigned here.
+
+Exact upstream bases and formal commits are pinned in
+[`components.lock.yaml`](components.lock.yaml).
+
+## Reproduction entry points
+
+Dual-H20 router experiment:
+
+```bash
+./scripts/run_dual_h20_router_experiment.sh
+```
+
+Four-H20 V2.3 readiness and formal workflow:
+
+```bash
+./scripts/check_v2_3_readiness.sh
+./scripts/run_four_h20_kv_v2_3.sh --run-tag <unique-utc-tag>
+```
+
+The formal four-H20 workload contains 200 sessions × six turns = 1200 requests.
+Its SHA256 is
+`ac078a5b169556a289243e5a11bce8d0014a309ef5c08b0d94ce66166b364714`;
+the public primary arrival trace SHA256 is
+`69964a26e2e9b4055f4147acf53f5c7e613fc16d8b551b2a48c6a9103d40ae26`.
+Raw datasets, model weights, request-level traces, and logs are intentionally
+not committed.
+
+## Repository layout
 
 ```text
-benchmarks/   dataset adapters, workload generation, load client, analysis
-router/       workload-aware proxy, policies, registry, mock backend
-configs/      workload, benchmark, router, and vLLM templates
-scripts/      environment checks, launch helpers, and smoke tests
-tests/        unit and local end-to-end tests
-data/         manifests and tiny test fixtures only
-reports/      generated summaries and figures
+benchmarks/   workload generation, client, trace join, analysis and gates
+configs/      dual-H20 and four-H20 frozen configurations
+scripts/      environment checks and resumable experiment orchestration
+tests/        deterministic router, trace, lifecycle and analysis tests
+reports/      compact public result summaries
+data/         dataset revisions, hashes and small manifests only
 ```
 
-All non-model artifacts default to `/root/workload-aware-kv-cache-data` so they
-are included in the AutoDL system image. Only model weights live on the data
-disk/file storage. Override the data location with `WORKLOAD_DATA_ROOT`.
+## Limitations
 
-## Metric Definitions
+- The public four-H20 table reports one pre-registered Cohort30 hotset trace;
+  it is not a universal online-serving result.
+- The controlled prefix-cache experiment is mechanism evidence, not a general
+  performance claim.
+- Adaptive PD, NVLink KV transfer, SGLang, Nsight Systems, and CUDA kernel
+  optimization are outside the completed public scope.
+- Results apply to the pinned model, hardware, workload, concurrency, cache
+  capacity, and arrival trace.
 
-- TTFT: request start to first non-empty streamed content delta.
-- E2E: request start to stream completion.
-- TPOT: `(E2E - TTFT) / (output_tokens - 1)`.
-- ITL: client-observed interval between transport chunks containing non-empty SSE content. It is not exact server-side token emission latency.
+## Artifact policy and license
 
-See `configs/` for reproducible defaults. GPU measurements must record the
-hardware topology, model revision, project commit, engine version, and full
-server arguments.
+The repository tracks project-authored source, configs, tests, dataset
+revisions and hashes, and compact summaries. Model weights, raw public data,
+repository snapshots, credentials, per-request traces, and logs remain outside
+Git. Third-party projects and datasets remain subject to their upstream
+licenses and terms.
 
-## Local Preparation
-
-```bash
-./scripts/install_system_dependencies.sh
-python -m pip install -r requirements.txt
-python -m benchmarks.dataset_adapters
-python -m benchmarks.workload_generator --profile small
-python -m benchmarks.validate_workload \
-  /root/workload-aware-kv-cache-data/processed/small/combined.jsonl \
-  --tokenizer /root/autodl-tmp/models/Qwen3-30B-A3B-Instruct-2507 \
-  --raw-swebench /root/workload-aware-kv-cache-data/raw/swebench_verified.jsonl
-pytest -q
-```
-
-The public dataset adapter pins official Hugging Face revisions and hashes.
-On AutoDL it uses hash-equivalent ModelScope LFS mirrors for LongBench and
-ShareGPT because those mirrors are directly reachable from the domestic
-network. `git-lfs` and `ffmpeg` are required system packages; FFmpeg is also
-needed for the vLLM CLI to load TorchCodec successfully.
-
-Run `scripts/run_mock_stack.sh` in one terminal and
-`scripts/run_simulated_experiment.sh` in another to reproduce the local router
-experiment. These outputs carry a `SIMULATED` marker. They validate the
-measurement pipeline but are not GPU performance results.
-
-The Production Stack integration is maintained in the companion fork on the
-`feature/agent-slo-aware-router` branch. With that branch installed in
-`/root/.venvs/vllm-router`, run the official-policy and project-policy matrix:
-
-```bash
-./scripts/run_guarded.sh /root/log/workload-aware-kv-cache/router-matrix.log \
-  -- ./scripts/run_production_policy_matrix.sh
-```
-
-The script starts two cold Mock backends for each policy, exercises
-`roundrobin`, `session`, `prefixaware`, and `agent_slo_aware`, writes a
-watermarked comparison, and verifies that no Router or Mock process remains.
-
-## Multi-GPU Handoff
-
-1. Run `scripts/check_environment.sh` and preserve its log.
-2. Copy and verify the 28 model files with `scripts/copy_model_to_data_disk.sh`.
-3. Start one baseline using `scripts/serve_vllm_baseline.sh`.
-4. Run `scripts/smoke_test_api.sh` before any workload sweep.
-5. Execute the configured closed-loop and Poisson matrices only after the
-   single-request baseline is stable.
-
-Do not install `/root/vllm` in editable mode during baseline collection.
-
-## Four-H20 Adaptive KV and PD Windows
-
-The four-GPU stage uses a frozen 1200-request SWE-bench-derived workload and
-separate, resumable Adaptive KV and Hybrid PD windows. Pre-rental validation is:
-
-```bash
-./scripts/check_four_h20_readiness.sh
-```
-
-On the 4 x H20 host, start with the mandatory runtime smoke in each window:
-
-```bash
-./scripts/run_four_h20_kv_window.sh
-./scripts/run_four_h20_pd_window.sh
-```
-
-Both entrypoints support `--dry-run`, `--from K03/P02`, `--resume`, and an
-explicit `--run-tag`. Failure injection is skipped by default and can be enabled
-with `--include-failure`. The KV
-window compares the best measured fixed LMCache retrieval threshold with the
-adaptive Local HBM/L1/L2/Recompute selector. The PD window compares a measured
-fixed prompt-length rule with Adaptive Monolithic/PD selection in the same
-2M+1P1D layout. Formal Before/After runs share one frozen arrival-trace SHA and
-report p50/p90/p95/p99, SLO goodput, path distributions, connector results,
-fallbacks, prediction error, and Router decision overhead.
-
-K02 records worker-observed LocalCPU/Mooncake retrieval locations and fits
-Prefill/L1/L2 costs into a frozen Adaptive KV config. P02 similarly fits the
-Prefill, PD transfer, and decode costs. Every stage gates request count, success
-rate, Trace completeness, and required execution-path evidence before it can be
-marked complete.
-
-`READY FOR 4xH20` means all pre-rental artifacts pass. It does not replace K01
-or P01: LMCache, Mooncake Store, and MooncakeConnector must still pass a real
-four-H20 runtime smoke before formal results are collected.
-
-## Workload Profiles
-
-The pinned `pre_rental` screening profile contains 330 requests across 105
-sessions:
-
-- 15 SWE-bench Verified sessions and 90 deterministic agent turns spanning 11 repositories;
-- five SWE sessions at each shared-prefix tier: 8K, 16K, and 32K tokens;
-- 30 LongBench RepoBench-P requests and 30 ShareGPT requests;
-- 30 controlled sessions and 180 requests for routing causality checks.
-
-The exact SWE-bench instance IDs are pinned in `configs/workloads.yaml`.
-Generated data is stored under
-`/root/workload-aware-kv-cache-data/processed/pre_rental`; the tracked manifest
-and validation summary are under `data/manifests/`.
-
-The `final` profile pins 50 SWE-bench sessions and 300 deterministic Agent
-turns. Three fixed Poisson arrival traces provide at least 900 business
-requests for final repeated experiments. The earlier screening profile is not
-used alone for a p99 headline.
-
-```bash
-GITHUB_ARCHIVE_MIRROR=https://ghfast.top/https://github.com \
-  GITHUB_DOWNLOAD_MODE=direct \
-  ./scripts/run_guarded.sh /root/log/workload-aware-kv-cache/prefetch-final.log \
-  -- python -m benchmarks.prefetch_repos --profile final --workers 1
-
-./scripts/run_guarded.sh /root/log/workload-aware-kv-cache/generate-final.log \
-  -- python -m benchmarks.workload_generator --profile final
-
-python -m benchmarks.generate_arrival_traces \
-  /root/workload-aware-kv-cache-data/processed/final/swebench.jsonl \
-  --output-dir /root/workload-aware-kv-cache-data/arrival-traces/final \
-  --request-rate 2 --seeds 42,43,44
-```
-
-## Repository and Artifact Policy
-
-The repository tracks source code, configs, tests, dataset revisions and hashes,
-small result summaries, and reproducible figures. Model weights, raw public
-datasets, repository snapshots, per-request traces, logs, credentials, and local
-caches stay outside Git. Set `WORKLOAD_DATA_ROOT`, `MODEL_PATH`, and
-`GITHUB_SSH_KEY` to adapt the examples to another machine.
-
-SWE-bench Verified, LongBench, ShareGPT, Qwen, vLLM, Production Stack, LMCache,
-and Mooncake remain subject
-to their respective upstream licenses and terms. This repository does not
-redistribute their raw data, source snapshots, or model weights.
-
-## License
-
-Project-authored source code is available under the Apache License 2.0. See
-`LICENSE` for details.
+Project-authored source is available under the [Apache License 2.0](LICENSE).

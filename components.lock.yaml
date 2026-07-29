@@ -1,0 +1,27 @@
+schema_version: 1
+scope: window1-adaptive-kv-v2.3
+components:
+  production_stack:
+    repository: https://github.com/yangsiqt/production-stack.git
+    upstream_repository: https://github.com/vllm-project/production-stack.git
+    upstream_base: 90ddf82b97ec9b09098de9976dc8dcb75c6be363
+    branch: feature/workload-aware-kv-v2.3
+    commit: eca26980bb6666e28980e02aa0da2cfe4f7fe610
+  vllm:
+    repository: https://github.com/yangsiqt/vllm.git
+    upstream_repository: https://github.com/vllm-project/vllm.git
+    upstream_base: 702f4814fe54fabff350d43cb753ae3e47c0c276
+    branch: feature/workload-aware-kv-v2.3
+    commit: 48658ab048227caf3b952ad96d1a6221783f644a
+  lmcache:
+    repository: https://github.com/yangsiqt/LMCache.git
+    upstream_repository: https://github.com/LMCache/LMCache.git
+    upstream_base: e38ee4157a11703b07845f45fd98e714b25c13cd
+    branch: feature/workload-aware-kv-v2.3
+    commit: 78edee49b24db7846261b97bb43abb10c7fecd6c
+  mooncake:
+    repository: https://github.com/yangsiqt/Mooncake.git
+    upstream_repository: https://github.com/kvcache-ai/Mooncake.git
+    upstream_base: d65bbd9810bb8322cd37aa18e50141760e050949
+    branch: feature/workload-aware-kv-v2.3
+    commit: e198f435df1ac4149d22e6e2dc6136dc86810e3a
